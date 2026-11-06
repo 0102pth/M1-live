@@ -109,8 +109,8 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <div><span class="tag" style="color:#f59e0b">−10</span><span id="p-cut"></span></div>
   </div>
   <div id="done-bar" style="display:none">
-    <b style="margin:0 8px">기록이 끝났습니다</b>
-    <button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button><button id="btn-new">새 로스팅</button>
+    <b id="done-msg" style="margin:0 8px">기록이 끝났습니다</b>
+    <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-new">새 로스팅</button>
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
   <div id="ctrl">
@@ -483,7 +483,7 @@ var M1Engine = (function () {
     }
   };
   P._end = function (why) { this.mode = 'done'; this.endReason = why; };
-  P.stop = function () { if (this.mode === 'run') this._end('수동 종료'); };
+  P.stop = function () { if (this.mode === 'run') this._end('수동 종료'); else if (this.mode === 'wait') this._end('대기 중 종료'); };
 
   /* 예측: RoR이 현재 화력의 평탄 높이 R*로 TAU초에 걸쳐 끌려간다. R* = 12.5 + 0.28(P−60) − 0.043(BT−160) + k(이번 배치 보정) */
   P.rstar = function (p, bt) { return 12.5 + 0.28 * (p - 60) - 0.043 * (bt - 160) + this.k; };
@@ -813,9 +813,9 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
 
   function defName() { var n = new Date(); return String(n.getFullYear()).slice(2) + ('0' + (n.getMonth() + 1)).slice(-2) + ('0' + n.getDate()).slice(-2) + '_M1'; }
   function finish() {
-    beep(3); render();
+    beep(3); render(); if (source === 'file') video.pause();
     var meta = { name: settings.name || defName(), green: settings.green, size: settings.size, charge: 170, air: 80, drum: 100, set: 220, notes: 'M1 실시간 앱으로 기록' };
-    save('lastCsv', engine.csv(meta)); $('done-bar').style.display = '';
+    save('lastCsv', engine.csv(meta)); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
   }
   function csvText() { return engine ? engine.csv({ name: settings.name || defName(), green: settings.green, size: settings.size, charge: 170, air: 80, drum: 100, set: 220, notes: 'M1 실시간 앱으로 기록' }) : load('lastCsv', ''); }
   function downloadCsv() {
@@ -850,11 +850,21 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-realign', function () { if (source === 'file') video.pause(); show('align'); });
   bind('btn-fc', function () { if (engine) { engine.mark('fc'); toast('1차 팝 ' + M1Engine.fmt(engine.now())); } });
   bind('btn-drop', function () { if (engine) { engine.mark('drop'); toast('배출 ' + M1Engine.fmt(engine.now()) + ' — 5초 뒤 기록 종료'); } });
-  bind('btn-stop', function () { if (engine && engine.mode === 'run' && confirm('기록을 끝낼까요?')) { engine.stop(); finish(); } });
+  bind('btn-stop', function () {
+    if (!engine) return;
+    if (engine.mode === 'run') { if (confirm('기록을 끝낼까요?')) { engine.stop(); finish(); } }
+    else if (engine.mode === 'wait') { engine.stop(); if (source === 'file') video.pause(); $('done-csv').style.display = 'none'; $('done-msg').textContent = '대기를 멈췄습니다'; $('done-bar').style.display = ''; render(); }
+    else toast('이미 끝난 기록입니다 — 새 로스팅을 누르세요');
+  });
   bind('btn-start-now', function () { if (engine && engine.mode === 'wait') { engine.charge = nowV() - 4; engine.mode = 'wait'; toast('지금을 투입으로 표시 — 8초 뒤 기록 시작'); } });
   bind('btn-diag', diagnose); bind('btn-diag2', diagnose);
   bind('btn-csv', downloadCsv); bind('btn-copy', copyCsv);
-  bind('btn-new', function () { newEngine(); $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none'; if (source === 'file') { video.currentTime = 0; video.play(); } });
+  bind('btn-new', function () {
+    $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
+    if (source === 'file') { video.pause(); engine = null; $('file').value = ''; show('home'); toast('연습할 영상을 다시 골라 주세요'); }
+    else { newEngine(); render(); toast('대기 중 · 다음 투입을 기다립니다'); }
+  });
+  video.addEventListener('ended', function () { if (engine && engine.mode !== 'done') { engine.stop(); if (engine.mode === 'done') finish(); } });
   Array.prototype.forEach.call(document.querySelectorAll('.pw'), function (b) { b.addEventListener('click', function () { setPower(+b.getAttribute('data-p')); }); });
   Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (b) { b.addEventListener('click', function () { speed = +b.getAttribute('data-s'); video.playbackRate = speed; Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (x) { x.className = 'spd' + (x === b ? ' on' : ''); }); }); });
   ['fcTemp', 'startPower', 'name', 'green', 'size'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = el.type === 'number' ? +el.value : el.value; save('settings', settings); }); });
