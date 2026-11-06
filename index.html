@@ -64,7 +64,8 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <b>설정</b><br>
     <label>1차 팝 예상 온도 <input id="set-fcTemp" type="number" style="width:80px">℃</label>
     <label>투입 때 화력 <input id="set-startPower" type="number" step="10" style="width:70px"></label>
-    <label>투입량 <input id="set-size" type="number" style="width:80px">g</label><br>
+    <label>투입량 <input id="set-size" type="number" style="width:80px">g</label>
+    <label>RoR 계산 구간 <select id="set-rorWin" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="fast">빠름 (지연 약 6초, 기본)</option><option value="30">30초 (지연 약 15초)</option><option value="45">45초 (지연 약 22초)</option><option value="60">60초 (매끄러움, 지연 약 30초)</option></select></label><br>
     <label>배치 이름 <input id="set-name" style="width:200px"></label>
     <label>생두 <input id="set-green" style="width:240px"></label><br>
     <label><input id="set-alerts" type="checkbox" style="width:auto"> 140·150·159·173℃ 알림</label>
@@ -98,7 +99,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <div id="nums">
       <div class="num"><div class="k">BT ℃</div><div class="v" id="v-bt" style="color:#ff5d8f">—</div></div>
       <div class="num"><div class="k">AT ℃</div><div class="v" id="v-at" style="color:#38bdf8">—</div></div>
-      <div class="num"><div class="k">실제 RoR ℃/분</div><div class="v" id="v-ror" style="color:#22c55e">—</div></div>
+      <div class="num"><div class="k">실제 RoR ℃/분 · <span id="rw"></span></div><div class="v" id="v-ror" style="color:#22c55e">—</div></div>
       <div class="num"><div class="k">화면 ROR / 60초 합</div><div class="v" id="v-disp" style="color:#facc15;font-size:28px">—</div></div>
       <div class="num"><div class="k">목표 1차 팝 (150℃+3:10)</div><div class="v" id="p-target" style="font-size:28px">—</div></div>
     </div>
@@ -444,7 +445,21 @@ var M1Engine = (function () {
 
   /* 실제 RoR(℃/min): 최근 30초 BT 직선 기울기 */
   P.ror = function (s, win) {
-    win = win || 30; var xs = [], ys = [];
+    win = win || this.cfg.rorWin || 30;
+    if (win === 'fast') {                                   // 빠름: 지난 60초에 2차 곡선을 맞춰 지금 순간의 기울기(지연 약 5초)
+      if (this.events.tp === null || s < this.events.tp + 60) return this.ror(s, 30);
+      var qx = [], qy = [];
+      for (var q = s - 59; q <= s; q++) { var bq = this.sec[q] && this.sec[q].bt; if (bq !== null && bq !== undefined) { qx.push(q - s); qy.push(bq); } }
+      if (qx.length < 30) return this.ror(s, 30);
+      var S = [0, 0, 0, 0, 0], Y = [0, 0, 0];
+      for (var j = 0; j < qx.length; j++) { var x = qx[j], x2 = x * x; S[0]++; S[1] += x; S[2] += x2; S[3] += x2 * x; S[4] += x2 * x2; Y[0] += qy[j]; Y[1] += x * qy[j]; Y[2] += x2 * qy[j]; }
+      var A = [[S[0], S[1], S[2]], [S[1], S[2], S[3]], [S[2], S[3], S[4]]];   // 정규방정식 풀이(크래머)
+      function det(M) { return M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]); }
+      var D = det(A); if (!D) return this.ror(s, 30);
+      var A1 = [[S[0], Y[0], S[2]], [S[1], Y[1], S[3]], [S[2], Y[2], S[4]]];
+      return det(A1) / D * 60;                              // x=0(지금)에서의 기울기
+    }
+    var xs = [], ys = [];
     for (var k = s - win + 1; k <= s; k++) { if (k < 0) continue; var b = this.sec[k] && this.sec[k].bt; if (b !== null && b !== undefined) { xs.push(k); ys.push(b); } }
     if (xs.length < win * 0.5) return null;
     var n = xs.length, mx = 0, my = 0; for (var i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; } mx /= n; my /= n;
@@ -490,12 +505,12 @@ var M1Engine = (function () {
   P.predict = function (dp) {
     var s = this.lastSec; if (this.mode !== 'run' || s < 90 || this.events.fc !== null) return null;
     var R = this.ror(s), B = this.bt(s); if (R === null || B === null) return null;
-    var p = this.powerAt(s) + (dp || 0), fcT = this.cfg.fcTemp || 183, out = { r30: null, r60: null, r90: null, fc: null, path: [] };
+    var p = this.powerAt(s) + (dp || 0), fcT = this.cfg.fcTemp || 183, out = { r30: null, r60: null, r90: null, fc: null, path: [], passed: B >= fcT };
     for (var t = 1; t <= 300; t++) {
       R += (this.rstar(p, B) - R) / TAU; B += R / 60;
-      if (t % 5 === 0 && t <= 90) out.path.push([s + t, R]);
+      if (t % 5 === 0 && (out.fc === null || t <= 90)) { out.path.push([s + t, R]); (out.btPath = out.btPath || []).push([s + t, B]); }
       if (t === 30) out.r30 = R; if (t === 60) out.r60 = R; if (t === 90) out.r90 = R;
-      if (out.fc === null && B >= fcT) out.fc = s + t;
+      if (out.fc === null && !out.passed && B >= fcT) out.fc = s + t;
     }
     return out;
   };
@@ -562,6 +577,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   var DEF_BOX = { ror: [0.1597, 0.6766, 0.25, 0.7055], timer: [0.2875, 0.6734, 0.4528, 0.6984], bt: [0.1653, 0.7227, 0.2556, 0.75], at: [0.3681, 0.7164, 0.4569, 0.7445] };
   var boxes = load('boxes', null) || JSON.parse(JSON.stringify(DEF_BOX));
   var settings = load('settings', { fcTemp: 183, startPower: 50, name: '', green: '', size: 125, alerts: true });
+  if (!settings.v2) { settings.rorWin = 'fast'; settings.v2 = 1; save('settings', settings); }
   var LABEL = { bt: 'BT', at: 'AT', ror: 'ROR', timer: '타이머' };
   var COLOR = { bt: '#ff5d8f', at: '#38bdf8', ror: '#facc15', timer: '#a78bfa' };
 
@@ -746,7 +762,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   window.addEventListener('resize', function () { resizeOverlay(); resizeChart(); });
 
   function newEngine() {
-    engine = new M1Engine({ T: TEMPL, fcTemp: +settings.fcTemp || 183, startPower: +settings.startPower || 50, marks: [140, 150, 159, 173] });
+    engine = new M1Engine({ T: TEMPL, fcTemp: +settings.fcTemp || 183, startPower: +settings.startPower || 50, rorWin: settings.rorWin === 'fast' ? 'fast' : (+settings.rorWin || 30), marks: [140, 150, 159, 173] });
     alertShown = 0; renderPower();
   }
   function setPower(p) { if (!engine) return; engine.setPower(p); renderPower(); }
@@ -776,14 +792,14 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var last = E.raw.length ? E.raw[E.raw.length - 1] : {};
     var bt = E.mode === 'run' || E.mode === 'done' ? E.bt(s) : last.bt, at = E.mode !== 'wait' ? E.at(s) : last.at;
     $('v-bt').textContent = fix(bt, 0); $('v-at').textContent = fix(at, 0);
-    $('v-ror').textContent = E.mode !== 'wait' && s >= 40 ? fix(E.ror(s)) : '—';
+    $('v-ror').textContent = E.mode !== 'wait' && E.events.tp !== null && s >= E.events.tp + 20 ? fix(E.ror(s)) : '—';
     var rd = E.mode !== 'wait' ? E.rorDisp(s) : last.ror, s60 = E.mode !== 'wait' ? E.sum60(s) : null;
     $('v-disp').textContent = (rd === null || rd === undefined ? '—' : rd) + '  /  ' + (s60 === null ? '—' : s60);
     ['bt', 'at', 'ror', 'timer'].forEach(function (k) { $('h-' + k).className = 'dot ' + (health[k] === 2 ? 'g' : 'r'); });
-    $('fps').textContent = fps.toFixed(1) + '장/초';
+    $('fps').textContent = fps.toFixed(1) + '장/초'; $('rw').textContent = E.cfg.rorWin === 'fast' ? '빠름' : (E.cfg.rorWin || 30) + '초';
     var ph = E.predict(0), pc = E.predict(-10), tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + 190) : '—';
-    $('p-hold').innerHTML = ph ? '30초 <b>' + fix(ph.r30) + '</b> · 60초 <b>' + fix(ph.r60) + '</b> · 팝 <b>' + (ph.fc ? M1Engine.fmt(ph.fc) : '—') + '</b>' : '<span class="mute">예측은 1:30 이후, 1차 팝 전까지</span>';
-    $('p-cut').innerHTML = pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
+    $('p-hold').innerHTML = ph ? '30초 <b>' + fix(ph.r30) + '</b> · 60초 <b>' + fix(ph.r60) + '</b> · 팝 <b>' + (ph.passed ? '온도 지남' : ph.fc ? M1Engine.fmt(ph.fc) : '—') + '</b>' : '<span class="mute">예측은 1:30 이후, 1차 팝 전까지</span>';
+    $('p-cut').innerHTML = pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.passed ? '온도 지남' : pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
     $('p-target').textContent = tgt;
     drawChart(ph, pc);
     renderPower();
@@ -802,11 +818,27 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     function line(fn, Y, col, wid, dash) { cctx.strokeStyle = col; cctx.lineWidth = wid; cctx.setLineDash(dash || []); cctx.beginPath(); var on = false; for (var s = 0; s <= E.lastSec; s++) { var y = fn(s); if (y === null || y === undefined) { on = false; continue; } if (!on) { cctx.moveTo(X(s), Y(y)); on = true; } else cctx.lineTo(X(s), Y(y)); } cctx.stroke(); cctx.setLineDash([]); }
     line(function (s) { return E.at(s); }, Yt, '#38bdf8', 1.5);
     line(function (s) { return E.bt(s); }, Yt, '#ff5d8f', 2.5);
-    line(function (s) { return s >= 40 ? E.ror(s) : null; }, Yr, '#22c55e', 2.5);
-    [[ph, '#22c55e'], [pc, '#f59e0b']].forEach(function (q) {
-      if (!q[0]) return; cctx.strokeStyle = q[1]; cctx.lineWidth = 2; cctx.setLineDash([6, 5]); cctx.beginPath(); cctx.moveTo(X(E.lastSec), Yr(E.ror(E.lastSec)));
-      q[0].path.forEach(function (p) { cctx.lineTo(X(p[0]), Yr(p[1])); }); cctx.stroke(); cctx.setLineDash([]);
+    var r0 = E.events.tp !== null ? E.events.tp + 20 : 1e9;
+    cctx.save(); cctx.beginPath(); cctx.rect(L, T, pw, phh); cctx.clip();
+    line(function (s) { return s >= r0 ? E.ror(s) : null; }, Yr, '#22c55e', 2.5);
+    var fcT = E.cfg.fcTemp || 183;
+    if (ph || pc) {                                        // 1차 팝 온도 기준선
+      cctx.strokeStyle = 'rgba(244,63,94,.45)'; cctx.lineWidth = 1; cctx.setLineDash([2, 4]); cctx.beginPath(); cctx.moveTo(L, Yt(fcT)); cctx.lineTo(L + pw, Yt(fcT)); cctx.stroke(); cctx.setLineDash([]);
+      cctx.fillStyle = 'rgba(244,63,94,.8)'; cctx.fillText('팝 ' + fcT + '℃', L + 4, Yt(fcT) - 4);
+    }
+    [[ph, '#22c55e', '#86efac', '유지'], [pc, '#f59e0b', '#fcd34d', '−10']].forEach(function (q, qi) {
+      var P = q[0]; if (!P) return;
+      cctx.strokeStyle = q[1]; cctx.lineWidth = 2; cctx.setLineDash([6, 5]); cctx.beginPath(); cctx.moveTo(X(E.lastSec), Yr(E.ror(E.lastSec)));
+      P.path.forEach(function (p) { if (p[0] <= E.lastSec + 90) cctx.lineTo(X(p[0]), Yr(p[1])); }); cctx.stroke();
+      if (P.btPath && P.btPath.length) {                   // BT 예측선: 팝 온도에 닿을 때까지
+        cctx.strokeStyle = q[2]; cctx.lineWidth = 2; cctx.beginPath(); cctx.moveTo(X(E.lastSec), Yt(E.bt(E.lastSec)));
+        P.btPath.forEach(function (p) { if (p[1] <= fcT + 0.5) cctx.lineTo(X(p[0]), Yt(Math.min(p[1], fcT))); }); cctx.stroke();
+      }
+      cctx.setLineDash([]);
+      if (P.fc) { var fx = X(P.fc), fy = Yt(fcT); cctx.fillStyle = q[1]; cctx.beginPath(); cctx.arc(fx, fy, 5, 0, 6.3); cctx.fill();
+        cctx.font = 'bold 13px -apple-system,sans-serif'; cctx.fillText(q[3] + ' ' + M1Engine.fmt(P.fc), fx + 7, fy + (qi ? 16 : -8)); cctx.font = '11px -apple-system,sans-serif'; }
     });
+    cctx.restore();
     E.power.forEach(function (p, i) { if (!i && p.t === 0) return; cctx.fillStyle = '#e2e8f0'; cctx.fillRect(X(p.t) - 1, T, 2, 8); cctx.fillText(p.p, X(p.t) + 3, T + 9); });
     ['fc', 'drop'].forEach(function (k) { var s = E.events[k]; if (s === null || s === undefined) return; cctx.strokeStyle = k === 'fc' ? '#f43f5e' : '#e2e8f0'; cctx.setLineDash([3, 3]); cctx.beginPath(); cctx.moveTo(X(s), T); cctx.lineTo(X(s), T + phh); cctx.stroke(); cctx.setLineDash([]); });
   }
@@ -867,7 +899,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   video.addEventListener('ended', function () { if (engine && engine.mode !== 'done') { engine.stop(); if (engine.mode === 'done') finish(); } });
   Array.prototype.forEach.call(document.querySelectorAll('.pw'), function (b) { b.addEventListener('click', function () { setPower(+b.getAttribute('data-p')); }); });
   Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (b) { b.addEventListener('click', function () { speed = +b.getAttribute('data-s'); video.playbackRate = speed; Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (x) { x.className = 'spd' + (x === b ? ' on' : ''); }); }); });
-  ['fcTemp', 'startPower', 'name', 'green', 'size'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = el.type === 'number' ? +el.value : el.value; save('settings', settings); }); });
+  ['fcTemp', 'startPower', 'name', 'green', 'size', 'rorWin'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = k === 'rorWin' ? (el.value === 'fast' ? 'fast' : +el.value) : (el.type === 'number' ? +el.value : el.value); save('settings', settings); if (k === 'rorWin' && engine) engine.cfg.rorWin = settings.rorWin; }); });
   $('set-alerts').checked = !!settings.alerts; $('set-alerts').addEventListener('change', function () { settings.alerts = $('set-alerts').checked; save('settings', settings); });
   if (load('lastCsv', '')) $('btn-last').style.display = '';
   bind('btn-last', function () { var ta = $('csv-box-home'); ta.value = load('lastCsv', ''); ta.style.display = ''; ta.select(); });
