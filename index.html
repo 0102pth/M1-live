@@ -58,6 +58,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
+    <button id="btn-resume" class="big" style="display:none;background:#7c2d12;border-color:#f97316"></button>
     <label style="display:inline-block"><span class="mute">연습:</span> <input id="file" type="file" accept="video/*" style="width:220px"></label>
   </div>
   <div class="card">
@@ -70,11 +71,13 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <label>생두 <input id="set-green" style="width:240px"></label><br>
     <label><input id="set-alerts" type="checkbox" style="width:auto"> 140·150·159·173℃ 알림</label>
     <label><input id="set-track" type="checkbox" style="width:auto"> 기록 중 칸 자동 따라가기</label>
+    <label><input id="set-adapt" type="checkbox" style="width:auto"> 숫자 틀 자동 적응</label>
   </div>
   <div class="card">
     <b>배경 곡선</b> <span class="mute" style="font-size:13px">— 지난 배치를 실시간 화면과 같은 방식으로 다시 그려 흐리게 깝니다</span><br>
     <label>기준 배치 <select id="bg-sel" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="">없음</option></select></label>
     <label><span class="mute">로그 CSV 불러오기:</span> <input id="bg-file" type="file" accept=".csv,text/csv" style="width:220px"></label>
+    <label>겹치는 기준 <select id="set-bgAlign" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="150">BT 맞춤 (150℃ 도달 시각, 그 전엔 점진)</option><option value="charge">투입 시각</option></select></label>
     <div class="mute" style="font-size:13px">지금: <span id="bg-label">없음</span></div>
   </div>
   <button id="btn-last" style="display:none">지난 기록 CSV 보기</button>
@@ -97,6 +100,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <button id="btn-default">기본 위치</button>
     <button id="btn-learn">숫자 익히기</button>
     <button id="btn-diag">진단 사진</button>
+    <button id="btn-treset">숫자 틀 초기화</button>
     <button id="btn-ready" class="big" style="background:#166534;border-color:#22c55e">완료 → 대기</button>
   </div>
 </div>
@@ -110,7 +114,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
       <div class="num"><div class="k">AT ℃</div><div class="v" id="v-at" style="color:#38bdf8">—</div></div>
       <div class="num"><div class="k">실제 RoR ℃/분 · <span id="rw"></span></div><div class="v" id="v-ror" style="color:#22c55e">—</div></div>
       <div class="num"><div class="k">화면 ROR / 60초 합</div><div class="v" id="v-disp" style="color:#facc15;font-size:28px">—</div></div>
-      <div class="num"><div class="k">목표 1차 팝 (150℃+3:10)</div><div class="v" id="p-target" style="font-size:28px">—</div></div>
+      <div class="num"><div class="k" id="p-target-k">목표 1차 팝 (150℃+3:10)</div><div class="v" id="p-target" style="font-size:28px">—</div></div>
     </div>
   </div>
   <div id="chart-wrap"><canvas id="chart"></canvas></div>
@@ -124,11 +128,12 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
   <div id="ctrl">
-    <span>화력</span>
+    <div><span>화력</span>
     <button class="pw" data-p="80">80</button><button class="pw" data-p="70">70</button><button class="pw" data-p="60">60</button><button class="pw" data-p="50">50</button><button class="pw" data-p="40">40</button><button class="pw" data-p="30">30</button><button class="pw" data-p="20">20</button>
-    <button id="btn-fc" class="big">1차 팝</button><button id="btn-drop" class="big">배출</button>
-    <button id="btn-stop">종료</button><button id="btn-start-now">지금 투입</button><button id="btn-bg" class="spd">배경</button><button id="btn-realign">칸 맞추기</button><button id="btn-diag2">진단</button>
+    <span style="display:inline-block;width:36px"></span><button id="btn-fc" class="big">1차 팝</button><button id="btn-drop" class="big">배출</button></div>
+    <div><button id="btn-start-now">지금 투입</button><button id="btn-bg" class="spd">배경</button><button id="btn-realign">칸 맞추기</button><button id="btn-diag2">진단</button>
     <span id="spd-row" style="display:none"><button class="spd on" data-s="1">1×</button><button class="spd" data-s="2">2×</button><button class="spd" data-s="4">4×</button></span>
+    <span style="display:inline-block;width:36px"></span><button id="btn-stop">종료</button></div>
   </div>
 </div>
 <div id="toast" style="display:none"></div>
@@ -214,7 +219,12 @@ var M1 = (function () {
 
   /* 칸 → [{kind:'d'|'-', g:Float32Array}] */
   function glyphs(img, box, field) {
-    var c = cropV(img, box), w = c.w, h = c.h, v = c.v, th = Math.max(70, otsu(v));
+    var c = cropV(img, box), w = c.w, h = c.h, v = c.v;
+    for (var bx = 0; bx < w; bx++) {                           // 열마다 바닥 밝기를 빼서 한쪽에 걸친 반사광을 줄임
+      var mn = 255; for (var by = 0; by < h; by++) if (v[by * w + bx] < mn) mn = v[by * w + bx];
+      var base = Math.min(100, mn); if (base) for (by = 0; by < h; by++) v[by * w + bx] = Math.max(0, v[by * w + bx] - base);
+    }
+    var th = Math.max(55, otsu(v));
     var m = new Uint8Array(w * h);
     for (var i = 0; i < w * h; i++) m[i] = v[i] > th ? 1 : 0;
     var m0 = m;
@@ -486,8 +496,6 @@ var M1 = (function () {
     if (ks.length >= 2) m = fitAffine(src, dst);              // 중심 2~3개 → 닮음변환(이동·크기·회전)
     if (!m) m = [s0, 0, bc[0] - s0 * rc[0], 0, s0, bc[1] - s0 * rc[1]];
     var sc = Math.sqrt(Math.abs(m[0] * m[4] - m[1] * m[3])), theta = Math.atan2(m[3], m[0]);
-    if (ks.length >= 3) {                                    // 셋이면 닮음변환으로 다시(일반 변환은 기울기 추정이 흔들림)
-      var m2 = fitAffine(src.concat([[src[0][0] + 1, src[0][1]]]).slice(0, 3), dst.slice(0, 3)); }
     var out = {};
     Object.keys(ref).forEach(function (k) {
       var c = applyAff(m, center(ref[k])), w = (ref[k][2] - ref[k][0]) * sc, h = (ref[k][3] - ref[k][1]) * sc;
@@ -498,14 +506,22 @@ var M1 = (function () {
 
   /* 따라가기: 지금 칸들 근처에서 BT·ROR·타이머를 다시 찾아 공통 이동량(중앙값)을 돌려준다 */
   function trackShift(img, boxes, T, theta) {
-    var dx = [], dy = [];
+    var dx = [], dy = [], hs = [];
     ['bt', 'ror', 'timer'].forEach(function (k) {
       var b = boxes[k], c = center(b), h = b[3] - b[1], r = fitField(img, c[0], c[1], Math.max(40, h * 1.8), k, T[k], theta); if (!r) return;
       var c2 = center(r.box), w2 = r.box[2] - r.box[0], w1 = b[2] - b[0];
-      if (Math.abs(w2 - w1) > 0.35 * w1 || Math.abs((r.box[3] - r.box[1]) - h) > 0.35 * h) return;    // 크기가 너무 다르면 믿지 않음
-      dx.push(c2[0] - c[0]); dy.push(c2[1] - c[1]);
+      if (Math.abs(w2 - w1) > 0.25 * w1 || Math.abs((r.box[3] - r.box[1]) - h) > 0.25 * h) return;    // 크기가 너무 다르면 믿지 않음
+      dx.push(c2[0] - c[0]); dy.push(c2[1] - c[1]); hs.push(h);
     });
     if (dx.length < 2) return null;
+    var tol = Math.max(4.5, 0.13 * Math.min.apply(null, hs));     // 서로 일치하는 칸이 둘 이상일 때만, 그 칸들로(팝업·손·조명으로 한 칸만 어긋나면 그 칸은 뺌)
+    var bestSet = null;
+    for (var i = 0; i < dx.length; i++) {
+      var set = []; for (var j = 0; j < dx.length; j++) if (Math.abs(dx[i] - dx[j]) <= tol && Math.abs(dy[i] - dy[j]) <= tol) set.push(j);
+      if (!bestSet || set.length > bestSet.length) bestSet = set;
+    }
+    if (bestSet.length < 2) return null;
+    dx = bestSet.map(function (j) { return dx[j]; }); dy = bestSet.map(function (j) { return dy[j]; });
     var med = function (a) { a = a.slice().sort(function (x, y) { return x - y; }); return a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2; };
     return { dx: med(dx), dy: med(dy), n: dx.length };
   }
@@ -534,11 +550,11 @@ var M1 = (function () {
     return field === 'timer' ? readTimer(img, box, T) : readField(img, box, field, T);
   }
 
-  function classify(g, T) {
-    var best = null, bd = 1e18;
+  function classify(g, T) {                                  // 코사인 거리(획 굵기·노출 변화에 둔감), 기존 임계값과 맞추려 ×220
+    var best = null, bd = 1e18, ng = 0; for (var i = 0; i < g.length; i++) ng += g[i] * g[i]; ng = Math.sqrt(ng) || 1;
     for (var k in T) {
-      var t = T[k], d = 0; for (var i = 0; i < g.length; i++) { var e = g[i] - t[i]; d += e * e; }
-      if (d < bd) { bd = d; best = k; }
+      var t = T[k], dot = 0, nt = 0; for (var j = 0; j < g.length; j++) { dot += g[j] * t[j]; nt += t[j] * t[j]; }
+      var d = (1 - dot / (ng * (Math.sqrt(nt) || 1))) * 220; if (d < bd) { bd = d; best = k; }
     }
     return { ch: best, d: bd };
   }
@@ -581,7 +597,7 @@ var M1Engine = (function () {
 
   P.reset = function () {
     this.mode = 'wait';            // wait → run → done
-    this.raw = []; this.charge = null; this.t0 = null;
+    this.raw = []; this.charge = null; this.chargePre = null; this.manual = false; this.t0 = null;
     this.buckets = {}; this.sec = {}; this.lastSec = -1;
     this.power = [{ t: 0, p: this.cfg.startPower || 50 }];
     this.events = { tp: null, fc: null, drop: null, t150: null };
@@ -609,26 +625,38 @@ var M1Engine = (function () {
   P._detectCharge = function (v) {
     var R = this.raw;
     if (this.charge === null) {
-      var past = R.filter(function (z) { return z.v >= v - 3 && z.v < v - 2 && z.bt !== null; }).map(function (z) { return z.bt; });
-      var now = R.slice(-2).map(function (z) { return z.bt; });
-      if (past.length && now.length === 2 && now.every(function (x) { return x !== null; })) {
+      var past = R.filter(function (z) { return z.v >= v - 3.5 && z.v < v - 1.5 && z.bt !== null; }).map(function (z) { return z.bt; });
+      var now = R.filter(function (z) { return z.v >= v - 1.0 && z.bt !== null; }).slice(-2).map(function (z) { return z.bt; });
+      if (past.length >= 2 && now.length === 2) {
         var p = Math.max.apply(null, past);
-        if (p >= 120 && now.every(function (x) { return p - x >= 6; })) this.charge = v;
+        // 6℃ 넘게 떨어지되 45℃ 넘는 급락은 제외(앞자리가 가려져 170→70처럼 읽힌 경우)
+        if (p >= 120 && now.every(function (x) { return p - x >= 6 && p - x <= 45; })) { this.charge = v; this.chargePre = p; }
       }
       return;
     }
-    if (v < this.charge + 8) return;
-    var c0 = this.charge, best = null, obs = R.filter(function (z) { return z.v >= c0 - 3 && z.ones !== null; });
-    for (var c = c0 - 6; c <= c0 + 1; c += 0.05) {
+    var lo = -6, hi = 1;
+    if (this.manual) {                                         // 수동 투입: 누른 순간 ≈ 타이머 0초. 그 앞뒤 3초에서 일의 자리로 맞춤
+      if (v < this.charge + 6) return; lo = -3; hi = 3;
+    } else {
+      if (v < this.charge + 8) return;
+      var pre = this.chargePre, recent = R.filter(function (z) { return z.v >= v - 3 && z.bt !== null; }).map(function (z) { return z.bt; });
+      if (!recent.length || median(recent) > pre - 10) { this.charge = null; this.chargePre = null; this.falseCharges = (this.falseCharges || 0) + 1; return; }   // 8초 뒤에도 안 내려가 있으면 가짜 투입(한 프레임 튐엔 흔들리지 않게 중앙값)
+      var drop = R.filter(function (z) { return z.bt !== null && z.bt <= pre - 6 && z.v >= v - 12; });   // 실제로 BT가 떨어지기 시작한 시점으로 기준을 다시 잡음
+      if (drop.length) this.charge = drop[0].v;
+    }
+    var c0 = this.charge, best = null, obs = R.filter(function (z) { return z.v >= c0 + lo - 3 && z.ones !== null; });
+    for (var c = c0 + lo; c <= c0 + hi; c += 0.05) {
       var ok = 0, n = 0;
       obs.forEach(function (z) { var s = z.v - c; if (s < 0.15) return; n++; if (Math.floor(s) % 10 === z.ones) ok++; });
       var sc = n ? ok / n : 0; if (!best || sc > best.sc) best = { c: c, sc: sc };
     }
-    this.t0 = best && best.sc >= 0.5 ? best.c : c0 - 3.5;   // 일의 자리가 부족하면 경험값(타이머 시작 후 약 3.5초에 BT 하락)
+    this.t0 = best && best.sc >= 0.5 ? best.c : (this.manual ? c0 : c0 - 3.5);   // 일의 자리가 부족하면: 수동은 누른 순간, 자동은 경험값(타이머 시작 후 약 3.5초에 BT 하락)
     this.mode = 'run';
     var self = this; this.raw.forEach(function (z) { if (z.v >= self.t0) self._place(z); });
     this._finalize(v);
   };
+
+  P.startManual = function (v) { if (this.mode !== 'wait') return; this.manual = true; this.charge = v; this.chargePre = null; };
 
   P._place = function (r) {
     var s = Math.floor(r.v - this.t0 + 1e-6); if (s < 0) return;
@@ -641,7 +669,7 @@ var M1Engine = (function () {
     var d = wrap60(r.ss - (r.v - this.t0)) + 0.5;
     if (Math.abs(d) > 5) return;
     this.syncDiffs.push(d); if (this.syncDiffs.length > 40) this.syncDiffs.shift();
-    if (this.syncDiffs.length >= 20) { var m = median(this.syncDiffs); if (Math.abs(m) > 0.35) { this.t0 -= m * 0.3; this.syncDiffs = []; } }
+    if (this.syncDiffs.length >= 20) { var m = median(this.syncDiffs); if (Math.abs(m) > 0.35) { this.t0 -= Math.max(-0.3, Math.min(0.3, m * 0.3)); this.syncDiffs = []; } }
   };
 
   P._finalize = function (v) {
@@ -727,7 +755,12 @@ var M1Engine = (function () {
   P.stop = function () { if (this.mode === 'run') this._end('수동 종료'); else if (this.mode === 'wait') this._end('대기 중 종료'); };
 
   /* 예측: RoR이 현재 화력의 평탄 높이 R*로 TAU초에 걸쳐 끌려간다. R* = 12.5 + 0.28(P−60) − 0.043(BT−160) + k(이번 배치 보정) */
-  P.rstar = function (p, bt) { return 12.5 + 0.28 * (p - 60) - 0.043 * (bt - 160) + this.k; };
+  P.rstar = function (p, bt) {
+    var fcT = this.cfg.fcTemp || 183, base = 12.5 + 0.28 * (p - 60) - 0.043 * (bt - 160) + this.k;
+    var exo = 1.4 * Math.exp(-Math.pow((bt - (fcT - 6)) / 4.5, 2));                          // 팝 직전 가속
+    var endo = bt > fcT - 1 ? -2.5 * (1 - Math.exp(-(bt - (fcT - 1)) / 2)) : 0;             // 팝 순간 하락
+    return base + exo + endo;
+  };
   P.predict = function (dp) {
     var s = this.lastSec; if (this.mode !== 'run' || s < 90 || this.events.fc !== null) return null;
     var R = this.ror(s), B = this.bt(s); if (R === null || B === null) return null;
@@ -765,6 +798,8 @@ var M1Engine = (function () {
     return L.join('\n');
   };
 
+  P.snapshot = function () { return { sec: this.sec, lastSec: this.lastSec, power: this.power, events: this.events, k: this.k, cfg: { fcTemp: this.cfg.fcTemp, startPower: this.cfg.startPower } }; };
+  P.restore = function (s, t0) { this.mode = 'run'; this.t0 = t0; this.sec = s.sec; this.lastSec = s.lastSec; this.power = s.power; this.events = s.events; this.k = s.k || 0; this.charge = t0 + 3.5; };
   Engine.fmt = fmt;
   return Engine;
 })();
@@ -798,7 +833,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     Object.keys(T).forEach(function (f) { o[f] = {}; Object.keys(T[f]).forEach(function (d) { var s = ''; T[f][d].forEach(function (x) { s += String.fromCharCode(Math.max(0, Math.min(255, Math.round(x * 255)))); }); o[f][d] = btoa(s); }); });
     return o;
   }
-  var TEMPL = decodeT(load('T', null) || DEFAULT_T);
+  var TEMPL = decodeT(load('T', null) || DEFAULT_T), TEMPL0 = decodeT(DEFAULT_T);
 
   /* ---------- 설정 ---------- */
   var DEF_BOX = { ror: [0.1597, 0.6766, 0.25, 0.7055], timer: [0.2875, 0.6734, 0.4528, 0.6984], bt: [0.1653, 0.7227, 0.2556, 0.75], at: [0.3681, 0.7164, 0.4569, 0.7445] };
@@ -806,6 +841,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   var theta = load('theta', 0) || 0;
   var settings = load('settings', { fcTemp: 183, startPower: 50, name: '', green: '', size: 125, alerts: true });
   if (settings.track === undefined) settings.track = true;
+  if (settings.adapt === undefined) settings.adapt = true;
+  if (!settings.bgAlign) settings.bgAlign = '150';
   if (!settings.v2) { settings.rorWin = 'fast'; settings.v2 = 1; save('settings', settings); }
   var LABEL = { bt: 'BT', at: 'AT', ror: 'ROR', timer: '타이머' };
   var COLOR = { bt: '#ff5d8f', at: '#38bdf8', ror: '#facc15', timer: '#a78bfa' };
@@ -828,8 +865,13 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     video.onloadedmetadata = function () { video.currentTime = 0; video.pause(); afterSource(); };
   }
   var looping = false;
-  function afterSource() { unlockAudio(); show('align'); if (!looping) { looping = true; loop(); } $('spd-row').style.display = source === 'file' ? '' : 'none'; }
+  var resumeWanted = false;
+  function afterSource() { unlockAudio(); if (resumeWanted && source === 'camera') { resumeWanted = false; if (!looping) { looping = true; loop(); } $('spd-row').style.display = 'none'; doResume(); return; } show('align'); if (!looping) { looping = true; loop(); } $('spd-row').style.display = source === 'file' ? '' : 'none'; }
 
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return; unlockAudio();
+    if (source === 'camera' && video.paused) { var p = video.play(); if (p && p.catch) p.catch(function () {}); }
+  });
   /* ---------- 화면 전환 ---------- */
   function show(name) {
     ['home', 'align', 'main'].forEach(function (n) { $('scr-' + n).style.display = n === name ? '' : 'none'; });
@@ -859,6 +901,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     if (!source || video.readyState < 2) return;
     var t = performance.now(), g = grab(); if (!g) return;
     var scr = document.body.getAttribute('data-screen');
+    if (scr === 'align' && engine && engine.mode === 'run') { engine.feed(nowV(), g.img, g.boxes, theta); }   // 기록 중엔 칸 맞추기 화면에서도 기록 계속
     if (scr === 'align') {
       Object.keys(boxes).forEach(function (k) {
         if (k === 'timer') { var r = M1.readBox(g.img, g.boxes.timer, 'timer', TEMPL.timer, theta); health.timer = r ? (r.d < 90 ? 2 : 1) : 0; lastRead.timer = r ? r.s.replace(/(\d\d)(\d\d)(\d\d)/, '$1:$2:$3') : '—'; }
@@ -868,7 +911,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     } else if (scr === 'main' && engine) {
       if (engine.mode !== 'done') {
         var before = engine.mode;
-        engine.feed(nowV(), g.img, g.boxes, theta); engine.adapt(); maybeTrack();
+        engine.feed(nowV(), g.img, g.boxes, theta); engine.adapt(); maybeTrack(); autosave(); adaptTemplates(g);
         Object.keys(engine.health).forEach(function (k) { health[k] = engine.health[k] ? 2 : 0; });
         if (before === 'wait' && engine.mode === 'run') { beep(2); toast('투입 감지 — 기록 시작'); }
         if (engine.mode === 'done' && before !== 'done') finish();
@@ -974,7 +1017,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
 
   /* ---------- 자동 맞추기 · 따라가기 ---------- */
   var REFPX = (function () { var o = {}; Object.keys(DEF_BOX).forEach(function (k) { var b = DEF_BOX[k]; o[k] = [b[0] * 720, b[1] * 1280, b[2] * 720, b[3] * 1280]; }); return o; })();
-  var full = document.createElement('canvas'), fctx = full.getContext('2d'), tapMode = false;
+  var full = document.createElement('canvas'), fctx = full.getContext('2d'), tcan = document.createElement('canvas'), tctx = tcan.getContext('2d'), tapMode = false;
   function fullFrame() {
     var W = vidW(), H = vidH(); if (!W) return null;
     if (full.width !== W || full.height !== H) { full.width = W; full.height = H; }
@@ -1005,9 +1048,9 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var t = performance.now(); if (t - lastTrack < 3000) return; lastTrack = t;
     var g = grab(); if (!g) return;
     var W = vidW(), H = vidH(), mg = 80, X0 = Math.max(0, g.X0 - mg), Y0 = Math.max(0, g.Y0 - mg), X1 = Math.min(W, g.X0 + g.img.width + mg), Y1 = Math.min(H, g.Y0 + g.img.height + mg);
-    if (full.width !== X1 - X0 || full.height !== Y1 - Y0) { full.width = X1 - X0; full.height = Y1 - Y0; }
-    fctx.drawImage(video, X0, Y0, X1 - X0, Y1 - Y0, 0, 0, X1 - X0, Y1 - Y0);
-    var id = fctx.getImageData(0, 0, X1 - X0, Y1 - Y0), img = { data: id.data, width: X1 - X0, height: Y1 - Y0, ch: 4 }, bx = {};
+    if (tcan.width < X1 - X0 || tcan.height < Y1 - Y0) { tcan.width = Math.max(tcan.width, X1 - X0 + 40); tcan.height = Math.max(tcan.height, Y1 - Y0 + 40); }   // 키울 때만 재할당
+    tctx.drawImage(video, X0, Y0, X1 - X0, Y1 - Y0, 0, 0, X1 - X0, Y1 - Y0);
+    var id = tctx.getImageData(0, 0, X1 - X0, Y1 - Y0), img = { data: id.data, width: X1 - X0, height: Y1 - Y0, ch: 4 }, bx = {};
     Object.keys(boxes).forEach(function (k) { var b = boxes[k]; bx[k] = [b[0] * W - X0, b[1] * H - Y0, b[2] * W - X0, b[3] * H - Y0]; });
     var s = M1.trackShift(img, bx, TEMPL, theta); if (!s) return;
     var hgt = bx.bt[3] - bx.bt[1], mag = Math.sqrt(s.dx * s.dx + s.dy * s.dy);
@@ -1015,6 +1058,30 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var fx = s.dx * 0.7 / W, fy = s.dy * 0.7 / H;
     Object.keys(boxes).forEach(function (k) { var b = boxes[k]; boxes[k] = [b[0] + fx, b[1] + fy, b[2] + fx, b[3] + fy]; });
     save('boxes', boxes); trackInfo = '칸 따라감 ' + Math.round(s.dx) + ',' + Math.round(s.dy) + 'px';
+  }
+
+
+  /* ---------- 숫자 틀 자동 적응: 아주 확실하고(코사인 거리 < 18) 직전 기록과 이어지는 판독만, 아주 조금씩 ---------- */
+  var lastAdapt = 0, adaptCount = 0;
+  function adaptTemplates(g) {
+    if (!settings.adapt || !engine || engine.mode !== 'run') return;
+    var t = performance.now(); if (t - lastAdapt < 2000) return; lastAdapt = t;
+    var s = engine.lastSec; if (s < 60) return;
+    ['bt', 'at'].forEach(function (f) {
+      var prev = f === 'bt' ? engine.bt(s) : engine.at(s); if (prev === null) return;
+      var src = theta && Math.abs(theta) > 0.005 ? M1.rotCrop(g.img, g.boxes[f], theta) : g.img, bb = src === g.img ? g.boxes[f] : [0, 0, src.width, src.height];
+      var gs = M1.glyphs(src, bb, f).filter(function (z) { return z.kind === 'd'; }); if (gs.length !== 3) return;
+      var res = gs.map(function (z) { return M1.classify(z.g, TEMPL[f]); }), val = +res.map(function (r) { return r.ch; }).join('');
+      if (Math.abs(val - prev) > 1 || res.some(function (r) { return r.d > 18; })) return;
+      var pd = ('00' + Math.round(prev)).slice(-3);
+      res.forEach(function (r, i) {
+        if (r.ch !== pd[i]) return;                              // 직전 기록과 같은 자리의 숫자만 학습(바뀐 자리는 오독일 수 있음)
+        var tp = TEMPL[f][r.ch], o = TEMPL0[f][r.ch];
+        for (var j = 0; j < tp.length; j++) { tp[j] = tp[j] * 0.98 + gs[i].g[j] * 0.02; if (o) tp[j] += 0.004 * (o[j] - tp[j]); }   // 원래 틀로 조금씩 당겨 한쪽으로 흐르지 않게
+      });
+      adaptCount++;
+    });
+    if (adaptCount && adaptCount % 30 === 0) save('T', encodeT(TEMPL));
   }
 
   /* ---------- 숫자 익히기 ---------- */
@@ -1031,7 +1098,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       if (f === 'bt') ds.forEach(function (d, i) { if (!TEMPL.ror[d]) TEMPL.ror[d] = TEMPL.bt[d]; });
       msg.push(LABEL[f] + ' 익힘');
     });
-    save('T', encodeT(TEMPL)); toast(msg.join(' · ') || '입력한 값이 없습니다');
+    save('T', encodeT(TEMPL)); TEMPL0 = decodeT(encodeT(TEMPL));   // 손으로 익힌 틀을 자동 적응의 기준점으로
+    toast(msg.join(' · ') || '입력한 값이 없습니다');
   }
 
 
@@ -1043,8 +1111,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     for (var s = 0; s < src.bt.length; s++) { var b = src.bt[s], a = src.at ? src.at[s] : null; if (b === null && a === null) continue; e.sec[s] = { bt: b, at: a === undefined ? null : a, ror: null }; last = s; }
     e.lastSec = last; e.events.tp = src.ev && src.ev.tp !== null && src.ev.tp !== undefined ? src.ev.tp : null;
     if (e.events.tp === null) { var lo = null; for (s = 5; s < Math.min(120, last); s++) { var x = e.bt(s); if (x !== null && (lo === null || x < lo.v)) lo = { s: s, v: x }; } e.events.tp = lo ? lo.s : 40; }
-    var out = { name: src.name, len: last, bt: [], at: [], ror: [], power: src.power || [], ev: src.ev || {} }, r0 = e.events.tp + 40;
-    for (s = 0; s <= last; s++) { out.bt.push(e.bt(s)); out.at.push(e.at(s)); out.ror.push(s >= r0 ? e.ror(s) : null); }
+    var out = { name: src.name, len: last, bt: [], at: [], ror: [], power: src.power || [], ev: src.ev || {}, t150: null }, r0 = e.events.tp + 40;
+    for (s = 0; s <= last; s++) { out.bt.push(e.bt(s)); out.at.push(e.at(s)); out.ror.push(s >= r0 ? e.ror(s) : null); if (out.t150 === null && s > 60 && out.bt[s] !== null && out.bt[s] >= 150) out.t150 = s; }
     return out;
   }
   function bgSource() {
@@ -1066,8 +1134,20 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     for (var i = 0; i < bt.length; i++) { if (bt[i] === undefined) bt[i] = null; if (at[i] === undefined) at[i] = null; }
     return { name: name, bt: bt, at: at, power: power, ev: ev };
   }
-  function drawBg(X, Yt, Yr, L, T, pw, phh) {
+  var bgSh = 0, bgShAt = -1;
+  function bgShift() {                                        // 150℃ 맞춤: 150℃ 전에는 지금 BT에 배경이 닿은 시각과 비교해 조금씩, 150℃ 뒤엔 고정
+    if (settings.bgAlign !== '150' || !BG || !engine || engine.mode === 'wait') { bgSh = 0; bgShAt = -1; return 0; }
+    var E = engine, s = E.lastSec;
+    if (E.events.t150 !== null && E.events.t150 !== undefined && BG.t150 !== null) return (bgSh = E.events.t150 - BG.t150);
+    if (s !== bgShAt && E.events.tp !== null && s >= E.events.tp + 15) {
+      bgShAt = s; var b = E.bt(s);
+      if (b !== null && b >= 110) for (var k = (BG.ev.tp || 30) + 5; k < BG.bt.length; k++) if (BG.bt[k] !== null && BG.bt[k] >= b) { bgSh += 0.15 * ((s - k) - bgSh); break; }
+    }
+    return Math.round(bgSh);                                  // 어느 경로든 정수(이름표 소수점 깜빡임·화력 띠와 곡선의 불일치 방지)
+  }
+  function drawBg(X0, Yt, Yr, L, T, pw, phh) {
     if (!BG || !settings.bgOn) return;
+    var sh = bgShift(), X = function (t) { return X0(t + sh); };
     cctx.save(); cctx.beginPath(); cctx.rect(L, T, pw, phh); cctx.clip(); cctx.globalAlpha = 0.33;
     function ln(arr, Y, col, w) { cctx.strokeStyle = col; cctx.lineWidth = w; cctx.beginPath(); var on = false; for (var s = 0; s < arr.length; s++) { var v = arr[s]; if (v === null || v === undefined) { on = false; continue; } if (!on) { cctx.moveTo(X(s), Y(v)); on = true; } else cctx.lineTo(X(s), Y(v)); } cctx.stroke(); }
     ln(BG.at, Yt, '#38bdf8', 1.5); ln(BG.bt, Yt, '#ff5d8f', 4); ln(BG.ror, Yr, '#22c55e', 4);
@@ -1076,7 +1156,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     BG.power.forEach(function (p) { if (p[0] <= 1) return; cctx.beginPath(); cctx.moveTo(X(p[0]), T); cctx.lineTo(X(p[0]), T + phh); cctx.stroke(); });
     cctx.setLineDash([]); cctx.globalAlpha = 0.5;
     if (BG.ev.fc) { cctx.strokeStyle = '#f43f5e'; cctx.lineWidth = 1; cctx.setLineDash([2, 4]); cctx.beginPath(); cctx.moveTo(X(BG.ev.fc), T); cctx.lineTo(X(BG.ev.fc), T + phh); cctx.stroke(); cctx.setLineDash([]); }
-    cctx.globalAlpha = 1; cctx.fillStyle = '#cbd5e1'; cctx.font = '600 13px -apple-system,sans-serif'; cctx.fillText('배경: ' + BG.name + (BG.ev.fc ? ' · 팝 ' + M1Engine.fmt(BG.ev.fc) : ''), L + 40, T + 18);
+    cctx.globalAlpha = 1; cctx.fillStyle = '#cbd5e1'; cctx.font = '600 13px -apple-system,sans-serif'; cctx.fillText('배경: ' + BG.name + (BG.ev.fc ? ' · 팝 ' + M1Engine.fmt(BG.ev.fc) : '') + (sh ? ' · BT 맞춤 ' + (sh > 0 ? '+' : '') + sh + '초' : ''), L + 40, T + 18);
     cctx.restore();
   }
 
@@ -1101,7 +1181,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       list.forEach(function (q, i) { var x = X(Math.max(0, q[0])) + 3, y = labelUp ? Yp(q[1]) - 3 : Yp(q[1]) + 12; if (i === 0 || q[1] !== list[i - 1][1]) cctx.fillText(q[1], x, Math.max(y0 + 10, Math.min(y1 - 2, y))); });
       cctx.globalAlpha = 1;
     }
-    if (BG && settings.bgOn && BG.power.length) stair(BG.power, BG.ev.drop || BG.len, '#f59e0b', 3, 0.45, false);
+    if (BG && settings.bgOn && BG.power.length) { var sh2 = bgShift(); stair(BG.power.map(function (p) { return [p[0] + sh2, p[1]]; }), (BG.ev.drop || BG.len) + sh2, '#f59e0b', 3, 0.45, false); }
     if (E && E.mode !== 'wait') stair(E.power.map(function (p) { return [p.t, p.p]; }), E.lastSec, '#fbbf24', 2.5, 1, true);
     cctx.restore();
   }
@@ -1150,7 +1230,13 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var ph = E.predict(0), pc = E.predict(-10), tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + 190) : '—';
     $('p-hold').innerHTML = ph ? '30초 <b>' + fix(ph.r30) + '</b> · 60초 <b>' + fix(ph.r60) + '</b> · 팝 <b>' + (ph.passed ? '온도 지남' : ph.fc ? M1Engine.fmt(ph.fc) : '—') + '</b>' : '<span class="mute">예측은 1:30 이후, 1차 팝 전까지</span>';
     $('p-cut').innerHTML = pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.passed ? '온도 지남' : pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
-    $('p-target').textContent = tgt;
+    $('btn-start-now').style.display = E.mode === 'wait' ? '' : 'none';
+    var tlab = $('p-target-k');
+    if (E.events.fc !== null && E.mode !== 'wait') {
+      var cur = E.mode === 'run' ? E.now() : s, dev = Math.max(0, cur - E.events.fc), fcb = E.bt(E.events.fc), dB = bt !== null && fcb !== null ? Math.round(bt - fcb) : null;
+      tlab.textContent = '1차 팝 이후 · DTR · ΔBT';
+      $('p-target').textContent = M1Engine.fmt(dev) + ' · ' + (cur > 0 ? (dev / cur * 100).toFixed(1) : '0.0') + '% · ' + (dB === null ? '—' : (dB >= 0 ? '+' : '') + dB + '℃');
+    } else { tlab.textContent = '목표 1차 팝 (150℃+3:10)'; $('p-target').textContent = tgt; }
     drawChart(ph, pc);
     renderPower();
   }
@@ -1197,13 +1283,16 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
 
   function defName() { var n = new Date(); return String(n.getFullYear()).slice(2) + ('0' + (n.getMonth() + 1)).slice(-2) + ('0' + n.getDate()).slice(-2) + '_M1'; }
   function finish() {
-    beep(3); render(); if (source === 'file') video.pause();
+    beep(3); render(); if (source === 'file') video.pause(); $('btn-drop').textContent = '배출'; clearRun();
     var meta = { name: settings.name || defName(), green: settings.green, size: settings.size, charge: 170, air: 80, drum: 100, set: 220, notes: 'M1 실시간 앱으로 기록' };
     save('lastCsv', engine.csv(meta)); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
   }
   function csvText() { return engine ? engine.csv({ name: settings.name || defName(), green: settings.green, size: settings.size, charge: 170, air: 80, drum: 100, set: 220, notes: 'M1 실시간 앱으로 기록' }) : load('lastCsv', ''); }
   function downloadCsv() {
-    var txt = '\ufeff' + csvText(), name = (settings.name || 'M1_로스팅').replace(/[\\/:*?"<>|\s]+/g, '_') + '.csv';
+    var txt = '\ufeff' + csvText(), name = (settings.name || defName()).replace(/[\\/:*?"<>|\s]+/g, '_') + '.csv';
+    try {                                                     // 아이패드: 공유 시트(파일 앱 저장·에어드롭)가 가능하면 우선
+      if (navigator.canShare && window.File) { var file = new File([txt], name, { type: 'text/csv' }); if (navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: name }).catch(function () {}); return; } }
+    } catch (e) {}
     try { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { document.body.removeChild(a); }, 500); }
     catch (e) { copyCsv(); }
   }
@@ -1211,6 +1300,27 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var txt = csvText();
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function () { toast('CSV를 복사했습니다'); }, fallback); else fallback();
     function fallback() { var ta = $('csv-box'); ta.value = txt; ta.style.display = ''; ta.select(); toast('아래 칸을 길게 눌러 복사하세요'); }
+  }
+
+
+  /* ---------- 기록 중 자동 저장 · 새로고침 복구 ---------- */
+  var lastSave = 0;
+  function autosave() {
+    if (!engine || engine.mode !== 'run' || source !== 'camera') return;
+    var t = performance.now(); if (t - lastSave < 5000) return; lastSave = t;
+    try { LS.setItem('m1.run', JSON.stringify({ wall: Date.now() / 1000, t0wall: Date.now() / 1000 - (nowV() - engine.t0), snap: engine.snapshot() })); } catch (e) {}
+  }
+  function clearRun() { try { LS.removeItem('m1.run'); } catch (e) {} }
+  var pendingResume = null;
+  (function () {
+    var r = load('run', null); if (!r) return;
+    var age = Date.now() / 1000 - r.wall; if (age > 900) { clearRun(); return; }
+    pendingResume = r; var b = $('btn-resume'); b.style.display = ''; b.textContent = '중단된 기록 이어가기 (' + Math.round(age / 60) + '분 전, ' + M1Engine.fmt(r.snap.lastSec) + '까지)';
+  })();
+  function doResume() {
+    if (!pendingResume) return; var r = pendingResume; pendingResume = null; $('btn-resume').style.display = 'none';
+    newEngine(); engine.restore(r.snap, nowV() - (Date.now() / 1000 - r.t0wall)); alertShown = engine.alerts.length;
+    show('main'); toast('이어서 기록합니다 — ' + M1Engine.fmt(engine.now()));
   }
 
   /* ---------- 소리·알림 ---------- */
@@ -1223,26 +1333,37 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   /* ---------- 버튼 연결 ---------- */
   function bind(id, fn) { $(id).addEventListener('click', function (e) { unlockAudio(); fn(e); }); }
   bind('btn-cam', startCamera);
+  bind('btn-resume', function () { resumeWanted = true; startCamera(); });
   $('file').addEventListener('change', function (e) { if (e.target.files[0]) startFile(e.target.files[0]); });
   bind('btn-default', function () { boxes = JSON.parse(JSON.stringify(DEF_BOX)); theta = 0; save('boxes', boxes); save('theta', 0); drawOverlay(); });
   bind('btn-auto', function () { tapMode = !tapMode; $('btn-auto').className = tapMode ? 'spd on' : ''; if (tapMode) toast('BT 숫자를 한 번 탭하세요'); });
   bind('btn-refind', function () { var b = boxes.bt; runAuto((b[0] + b[2]) / 2 * vidW(), (b[1] + b[3]) / 2 * vidH()); });
   bind('btn-learn', function () { $('learn').style.display = $('learn').style.display === 'none' ? '' : 'none'; });
   bind('btn-learn-go', learn);
+  bind('btn-treset', function () { if (!confirm('숫자 틀을 처음 상태로 되돌릴까요?')) return; TEMPL = decodeT(DEFAULT_T); try { LS.removeItem('m1.T'); } catch (e) {} toast('숫자 틀을 초기화했습니다'); });
   bind('btn-ready', function () {
+    if (engine && engine.mode === 'run') { saveGhost(); show('main'); toast('기록을 계속합니다'); return; }   // 기록 중이면 기록을 지우지 않고 돌아감
     saveGhost(); newEngine(); show('main'); $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
     if (source === 'file') { video.playbackRate = speed; video.currentTime = 0; video.play(); }
   });
   bind('btn-realign', function () { if (source === 'file') video.pause(); show('align'); });
-  bind('btn-fc', function () { if (engine) { engine.mark('fc'); toast('1차 팝 ' + M1Engine.fmt(engine.now())); } });
-  bind('btn-drop', function () { if (engine) { engine.mark('drop'); toast('배출 ' + M1Engine.fmt(engine.now()) + ' — 5초 뒤 기록 종료'); } });
+  bind('btn-fc', function () {
+    if (!engine || engine.mode !== 'run') return;
+    if (engine.events.fc !== null && engine.now() - engine.events.fc <= 10) { engine.events.fc = null; toast('1차 팝 표시를 취소했습니다'); render(); return; }
+    engine.mark('fc'); toast('1차 팝 ' + M1Engine.fmt(engine.now()) + ' — 10초 안에 다시 누르면 취소'); render();
+  });
+  bind('btn-drop', function () {
+    if (!engine || engine.mode !== 'run') return;
+    if (engine.endAt !== undefined) { delete engine.endAt; engine.events.drop = null; $('btn-drop').textContent = '배출'; toast('배출을 취소했습니다'); render(); return; }
+    engine.mark('drop'); $('btn-drop').textContent = '배출 취소'; toast('배출 ' + M1Engine.fmt(engine.now()) + ' — 5초 뒤 종료 · 다시 누르면 취소');
+  });
   bind('btn-stop', function () {
     if (!engine) return;
     if (engine.mode === 'run') { if (confirm('기록을 끝낼까요?')) { engine.stop(); finish(); } }
     else if (engine.mode === 'wait') { engine.stop(); if (source === 'file') video.pause(); $('done-csv').style.display = 'none'; $('done-msg').textContent = '대기를 멈췄습니다'; $('done-bar').style.display = ''; render(); }
     else toast('이미 끝난 기록입니다 — 새 로스팅을 누르세요');
   });
-  bind('btn-start-now', function () { if (engine && engine.mode === 'wait') { engine.charge = nowV() - 4; engine.mode = 'wait'; toast('지금을 투입으로 표시 — 8초 뒤 기록 시작'); } });
+  bind('btn-start-now', function () { if (engine && engine.mode === 'wait') { engine.startManual(nowV()); toast('지금을 투입으로 표시 — 6초 뒤 기록 시작(지금부터 기록됨)'); } });
   bind('btn-diag', diagnose); bind('btn-diag2', diagnose);
   bind('btn-csv', downloadCsv); bind('btn-copy', copyCsv);
   bind('btn-new', function () {
@@ -1254,6 +1375,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   Array.prototype.forEach.call(document.querySelectorAll('.pw'), function (b) { b.addEventListener('click', function () { setPower(+b.getAttribute('data-p')); }); });
   Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (b) { b.addEventListener('click', function () { speed = +b.getAttribute('data-s'); video.playbackRate = speed; Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (x) { x.className = 'spd' + (x === b ? ' on' : ''); }); }); });
   ['fcTemp', 'startPower', 'name', 'green', 'size', 'rorWin'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = k === 'rorWin' ? (el.value === 'fast' ? 'fast' : +el.value) : (el.type === 'number' ? +el.value : el.value); save('settings', settings); if (k === 'rorWin') { if (engine) engine.cfg.rorWin = settings.rorWin; refreshBg(); } }); });
+  $('set-adapt').checked = !!settings.adapt; $('set-adapt').addEventListener('change', function () { settings.adapt = $('set-adapt').checked; save('settings', settings); });
+  $('set-bgAlign').value = settings.bgAlign; $('set-bgAlign').addEventListener('change', function () { settings.bgAlign = $('set-bgAlign').value; save('settings', settings); });
   $('set-track').checked = !!settings.track; $('set-track').addEventListener('change', function () { settings.track = $('set-track').checked; save('settings', settings); });
   $('set-alerts').checked = !!settings.alerts; $('set-alerts').addEventListener('change', function () { settings.alerts = $('set-alerts').checked; save('settings', settings); });
   if (load('lastCsv', '')) $('btn-last').style.display = '';
