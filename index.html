@@ -1,10 +1,12 @@
 <!doctype html>
 <!--
-  M1 실시간 v2.2 (2026-11-07)
+  M1 실시간 v2.4.1 (2026-11-08)
   v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
   v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
   v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
-  [제미나이 최소 수정] 완료 바(#done-bar)에 '처음 화면 (설정)' 버튼(#btn-home) 추가 및 startCamera 스트림 재사용 처리
+  v2.3 실사용 1차 반영: 시각 어긋남 자동 보정, 처음 화면(설정) 버튼, GPT 리뷰(칸 맞추기 중 종료 처리, 화면 멈춤, 복구 설정, 화력 20)
+  v2.4 실사용 2차 반영: 패널 타이머 시작 감지, RoR 일찍 표시·축 자동, 옐로잉·마이야르, 투입·배출 용량, 1080p·줌
+  v2.4.1 iOS 17 확인: 화면 꺼짐 방지(Wake Lock)
 -->
 
 <html lang="ko"><head>
@@ -57,12 +59,12 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 #btn-fc{background:#881337;border-color:#f43f5e}#btn-drop{background:#334155}
 #done-bar{position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 70px);background:var(--card);border:1px solid var(--acc);border-radius:14px;padding:8px;z-index:3}
 #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 70px);transform:translateX(-50%);background:#0f766e;color:#fff;padding:12px 20px;border-radius:14px;font-size:18px;font-weight:700;z-index:9;box-shadow:0 6px 24px rgba(0,0,0,.4)}
-</style><script type="text/javascript" nonce="130a875ca2654dfc8d39909ad03" src="//local.adguard.org?ts=1794020795810&amp;type=content-script&amp;dmn=contribution.usercontent.google.com&amp;url=https%3A%2F%2Fcontribution.usercontent.google.com%2Fdownload%3Fc%3DCgxiYXJkX3N0b3JhZ2USUBINcmVzcG9uc2VfZGF0YRo_CjBiOGMyYWQwOWQ0NjJhNWE5MDAwNjVmYTcyY2UyYjkzYzA3MzRjZjZlMjIzODI5NTESCxIHEMDv1OmYFBgB%26filename%3Dindex.html%26opi%3D103135050%26authuser%3D1&amp;app=chrome.exe&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1&amp;stealth=1&amp;st-dnt"></script><script type="text/javascript" nonce="130a875ca2654dfc8d39909ad03" src="//local.adguard.org?ts=1794020795810&amp;name=AdGuard%20Extra&amp;type=user-script"></script></head>
+</style></head>
 <body data-screen="home">
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
 <div id="scr-home" class="scr">
-  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.2</span></h1>
+  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.4.1</span></h1>
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
@@ -75,11 +77,12 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <label>투입 때 화력 <input id="set-startPower" type="number" step="10" style="width:70px"></label>
     <label>투입량 <input id="set-size" type="number" style="width:80px">g</label>
     <label>RoR 계산 구간 <select id="set-rorWin" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="fast">빠름 (지연 약 6초, 기본)</option><option value="30">30초 (지연 약 15초)</option><option value="45">45초 (지연 약 22초)</option><option value="60">60초 (매끄러움, 지연 약 30초)</option></select></label><br>
-    <label>배치 이름 <input id="set-name" style="width:200px"></label>
+    <label>배치 이름 <input id="set-name" style="width:200px" placeholder="비우면 날짜_번호"></label>
     <label>생두 <input id="set-green" style="width:240px"></label><br>
     <label><input id="set-alerts" type="checkbox" style="width:auto"> 140·150·159·173℃ 알림</label>
     <label><input id="set-track" type="checkbox" style="width:auto"> 기록 중 칸 자동 따라가기</label>
     <label><input id="set-adapt" type="checkbox" style="width:auto"> 숫자 틀 자동 적응</label>
+    <label>카메라 해상도 <select id="set-res" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="1080">1080p (숫자 더 선명, 기본)</option><option value="720">720p (기기가 느릴 때)</option></select></label>
   </div>
   <div class="card">
     <b>배경 곡선</b> <span class="mute" style="font-size:13px">— 지난 배치를 실시간 화면과 같은 방식으로 다시 그려 흐리게 깝니다</span><br>
@@ -103,6 +106,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
       <button id="btn-learn-go">익히기</button>
     </div>
     <label style="margin-left:6px"><input id="ghost-on" type="checkbox" checked style="width:auto"> 지난 구도 겹쳐 보기</label>
+    <span id="zoom-row" style="display:none">줌 <input id="zoom" type="range" style="width:160px;vertical-align:middle"> <span id="zoom-v"></span></span>
     <button id="btn-auto">자동 맞추기 (BT 탭)</button>
     <button id="btn-refind">다시 찾기</button>
     <button id="btn-default">기본 위치</button>
@@ -132,15 +136,15 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   </div>
   <div id="done-bar" style="display:none">
     <b id="done-msg" style="margin:0 8px">기록이 끝났습니다</b>
-    <!-- [제미나이 수정] 카메라 모드에서도 첫 페이지(설정창)로 돌아가 생두/팝 온도를 바꿀 수 있도록 '처음 화면 (설정)' 버튼(#btn-home) 추가 -->
+    <label>투입 <input id="in-g" inputmode="decimal" style="width:70px">g</label> <label>배출 <input id="out-g" inputmode="decimal" style="width:70px" placeholder="냉각 후">g</label> <b id="loss" style="margin-right:8px"></b>
     <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button>
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
   <div id="ctrl">
     <div><span>화력</span>
     <button class="pw" data-p="80">80</button><button class="pw" data-p="70">70</button><button class="pw" data-p="60">60</button><button class="pw" data-p="50">50</button><button class="pw" data-p="40">40</button><button class="pw" data-p="30">30</button><button class="pw" data-p="20">20</button>
-    <span style="display:inline-block;width:36px"></span><button id="btn-fc" class="big">1차 팝</button><button id="btn-drop" class="big">배출</button></div>
-    <div><button id="btn-start-now">지금 투입</button><button id="btn-bg" class="spd">배경</button><button id="btn-realign">칸 맞추기</button><button id="btn-diag2">진단</button>
+    <span style="display:inline-block;width:28px"></span><button id="btn-de" class="big" style="border-color:#facc15">옐로잉</button><button id="btn-my" class="big" style="border-color:#fb923c">마이야르</button><button id="btn-fc" class="big">1차 팝</button><button id="btn-drop" class="big">배출</button></div>
+    <div><button id="btn-settings">설정</button><button id="btn-start-now">수동 시작</button><button id="btn-bg" class="spd">배경</button><button id="btn-realign">칸 맞추기</button><button id="btn-diag2">진단</button>
     <span id="spd-row" style="display:none"><button class="spd on" data-s="1">1×</button><button class="spd" data-s="2">2×</button><button class="spd" data-s="4">4×</button></span>
     <span style="display:inline-block;width:36px"></span><button id="btn-stop">종료</button></div>
   </div>
@@ -622,7 +626,7 @@ var M1Engine = (function () {
       r[f] = ok ? +x.s : null; self.health[f] = ok;
     });
     var tm = M1.readBox(img, boxes.timer, 'timer', T.timer, theta), tok = !!(tm && tm.d < 90);
-    r.ss = tok ? (+tm.s[4]) * 10 + (+tm.s[5]) : null; r.ones = tok ? +tm.s[5] : null; this.health.timer = tok;
+    r.ss = tok ? (+tm.s[4]) * 10 + (+tm.s[5]) : null; r.ones = tok ? +tm.s[5] : null; r.mm = tok ? (+tm.s[2]) * 10 + (+tm.s[3]) : null; this.health.timer = tok;
     if (r.bt !== null && (r.bt < 20 || r.bt > 260)) r.bt = null;
     if (r.at !== null && (r.at < 20 || r.at > 300)) r.at = null;
     this.raw.push(r);
@@ -630,9 +634,32 @@ var M1Engine = (function () {
     else if (this.mode === 'run') { this._place(r); this._sync(r); this._finalize(v); this._detectEnd(v, r); }
   };
 
+  /* 패널 타이머 시작 감지(일의 자리 기준): 타이머는 시작 전 00:00:00에 멈춰 있어 일의 자리가 0이다가, 시작하면 1초마다 바뀜.
+     "c 전엔 0, c 뒤엔 (지난 초 % 10)"이 최근 15초 판독의 80% 넘게 맞고, 멈춰 있던 구간(0)도 3번 넘게 보였으면 c를 0초로 바로 기록 시작 */
+  P._timerStart = function (v) {
+    var ob = this.raw.filter(function (z) { return z.v >= v - 15 && z.ones !== null; });
+    var recent = ob.filter(function (z) { return z.v >= v - 5; }); if (recent.length < 6) return false;
+    var kinds = {}; recent.forEach(function (z) { kinds[z.ones] = 1; }); if (Object.keys(kinds).length < 3) return false;
+    var same = function (a, b) { return a === b || (a === 0 && b === 8) || (a === 8 && b === 0); };   // 타이머 칸에선 0과 8이 자주 헷갈림
+    function score(c) {                                        // 시작 전: 한 값으로 고정(무슨 숫자로 읽히든), 시작 뒤: 1초마다 흐름 — 따로 채점
+      var pre = ob.filter(function (z) { return z.v < c; }), post = ob.filter(function (z) { return z.v >= c; }), cnt = {}, mode = null;
+      pre.forEach(function (z) { cnt[z.ones] = (cnt[z.ones] || 0) + 1; if (mode === null || cnt[z.ones] > cnt[mode]) mode = z.ones; });
+      var po = 0, kinds = {}; post.forEach(function (z) { var e2 = Math.floor(z.v - c) % 10; if (same(e2, z.ones)) { po++; kinds[e2] = 1; } });
+      return { pre: pre.length, preOk: mode === null ? 0 : cnt[mode] / pre.length, post: post.length, postOk: post.length ? po / post.length : 0, kinds: Object.keys(kinds).length, tot: (mode === null ? 0 : cnt[mode]) + po };
+    }
+    var best = null;
+    for (var c = v - 12; c <= v - 3; c += 0.05) { var r = score(c); if (!best || r.tot > best.tot) { best = r; best.c = c; } }
+    if (!best || best.pre < 3 || best.preOk < 0.75 || best.post < 6 || best.postOk < 0.85 || best.kinds < 3) return false;
+    var hi = best.c; for (var c2 = best.c; c2 <= best.c + 1; c2 += 0.05) { if (score(c2).tot === best.tot) hi = c2; else break; }
+    this.t0 = (best.c + hi) / 2; this.charge = this.t0 + 3.5; this.mode = 'run'; this.startedBy = 'timer';
+    var self = this; this.raw.forEach(function (z) { if (z.v >= self.t0) self._place(z); });
+    this._finalize(v); return true;
+  };
+
   /* 투입: 예열 상태(BT≥120)에서 3초 안에 6℃ 넘게 떨어지는 판독이 연속 2번 → 8초 더 모아 일의 자리로 0초를 맞춤 */
   P._detectCharge = function (v) {
     var R = this.raw;
+    if (!this.manual && this._timerStart(v)) return;
     if (this.charge === null) {
       var past = R.filter(function (z) { return z.v >= v - 3.5 && z.v < v - 1.5 && z.bt !== null; }).map(function (z) { return z.bt; });
       var now = R.filter(function (z) { return z.v >= v - 1.0 && z.bt !== null; }).slice(-2).map(function (z) { return z.bt; });
@@ -659,6 +686,7 @@ var M1Engine = (function () {
       obs.forEach(function (z) { var s = z.v - c; if (s < 0.15) return; n++; if (Math.floor(s) % 10 === z.ones) ok++; });
       var sc = n ? ok / n : 0; if (!best || sc > best.sc) best = { c: c, sc: sc };
     }
+    this.startedBy = this.manual ? 'manual' : 'bt';
     this.t0 = best && best.sc >= 0.5 ? best.c : (this.manual ? c0 : c0 - 3.5);   // 일의 자리가 부족하면: 수동은 누른 순간, 자동은 경험값(타이머 시작 후 약 3.5초에 BT 하락)
     this.mode = 'run';
     var self = this; this.raw.forEach(function (z) { if (z.v >= self.t0) self._place(z); });
@@ -666,6 +694,54 @@ var M1Engine = (function () {
   };
 
   P.startManual = function (v) { if (this.mode !== 'wait') return; this.manual = true; this.charge = v; this.chargePre = null; };
+
+
+  /* 패널 타이머와 몇 초 이상 일관되게 어긋나면(지금 투입을 일찍 누름 등) 기록 전체의 시각을 패널에 다시 맞춘다 */
+  /* 진짜 투입의 BT 급락 시각: 직전 5초 중앙값이 예열(≥120)이고, 그 뒤 2초 중앙값이 6℃ 넘게 낮고, 25초 안에 30℃ 넘게 떨어진 첫 순간 */
+  P._findDrop = function () {
+    var B = this.raw.filter(function (z) { return z.bt !== null; });
+    function med(a, b) { var x = B.filter(function (z) { return z.v >= a && z.v < b; }).map(function (z) { return z.bt; }); return x.length >= 3 ? median(x) : null; }
+    for (var i = 0; i < B.length; i++) {
+      var v = B[i].v, pre = med(v - 5, v - 0.3); if (pre === null || pre < 120) continue;
+      var post = med(v, v + 2); if (post === null || post > pre - 6) continue;
+      var later = B.filter(function (z) { return z.v >= v && z.v <= v + 25; }).map(function (z) { return z.bt; });
+      if (later.length && Math.min.apply(null, later) <= pre - 30) return v;
+    }
+    return null;
+  };
+  P._bigOffset = function (r) {
+    if (r.v - this.t0 > 120 || (this.reanchors || 0) >= 2) return;      // 시작할 때 생긴 어긋남만
+    this.big = (this.big || []).filter(function (z) { return z.v > r.v - 10; }); this.big.push({ v: r.v });
+    if (this.big.length < 8) return;                                   // 최근 10초에 큰 어긋남이 8번 넘게 보일 때 확인
+    var vDrop = this._findDrop();                                     // 1) 실제 투입(BT 급락) 시각
+    if (vDrop === null) return;
+    var R = this.raw;
+    var obs = R.filter(function (z) { return z.ones !== null && z.v >= vDrop - 3.5; });
+    if (obs.length < 16) return;
+    function score(c) { var ok = 0; obs.forEach(function (z) { var s = z.v - c; if (s >= 0.15 && Math.floor(s) % 10 === z.ones) ok++; }); return ok / obs.length; }
+    var best = null;                                                    // 2) 급락 3.5초 전 앞뒤 5초에서 초의 일의 자리가 가장 잘 맞는 0초 시각
+    for (var c = vDrop - 8.5; c <= vDrop + 1.5; c += 0.05) { var sc = score(c); if (!best || sc > best.sc) best = { c: c, sc: sc }; }
+    // 3) 일의 자리는 10초마다 같은 숫자가 돌아오므로, 지금 시각과의 비교는 십의 자리까지 포함한 초 전체로
+    var full = obs.filter(function (z) { return z.ss !== null; });
+    function scoreFull(c) { var ok = 0; full.forEach(function (z) { var s = z.v - c; if (s >= 0.15 && Math.floor(s) % 60 === z.ss) ok++; }); return full.length ? ok / full.length : 0; }
+    var fb = scoreFull(best.c), fc = scoreFull(this.t0);
+    if (best.sc < 0.6 || fb < 0.35 || fb - fc < 0.25 || Math.abs(best.c - this.t0) < 4) return;   // 확실히 더 잘 맞고 4초 넘게 다를 때만
+    this.reanchor(best.c - this.t0);
+  };
+  P.reanchor = function (o) {
+    var self = this, shift = function (t) { return Math.max(0, t - Math.round(o)); };
+    this.t0 += o; this.reanchors = (this.reanchors || 0) + 1; this.big = []; this.syncDiffs = [];
+    this.power = this.power.map(function (p) { return { t: shift(p.t), p: p.p }; });
+    var keep = [];                                                    // 같은 시각에 겹치면 마지막 것만
+    this.power.forEach(function (p) { if (keep.length && keep[keep.length - 1].t === p.t) keep[keep.length - 1] = p; else keep.push(p); }); this.power = keep;
+    ['de', 'my', 'fc', 'drop'].forEach(function (k) { if (self.events[k] !== null && self.events[k] !== undefined) self.events[k] = shift(self.events[k]); });
+    if (this.endAt !== undefined) this.endAt = shift(this.endAt);
+    var old = this.events; this.events = { tp: null, de: old.de, my: old.my, fc: old.fc, drop: old.drop, t150: null };
+    this.buckets = {}; this.sec = {}; this.lastSec = -1; this.silent = true;
+    this.raw.forEach(function (z) { if (z.v >= self.t0) self._place(z); });
+    this._finalize(this.vNow); this.silent = false;
+    this.notice = '패널 타이머에 맞춰 시각을 ' + (o > 0 ? o.toFixed(0) + '초 당김' : (-o).toFixed(0) + '초 늦춤');
+  };
 
   P._place = function (r) {
     var s = Math.floor(r.v - this.t0 + 1e-6); if (s < 0) return;
@@ -676,7 +752,7 @@ var M1Engine = (function () {
   P._sync = function (r) {
     if (r.ss === null) return;
     var d = wrap60(r.ss - (r.v - this.t0)) + 0.5;
-    if (Math.abs(d) > 5) return;
+    if (Math.abs(d) > 5) { this._bigOffset(r); return; }
     this.syncDiffs.push(d); if (this.syncDiffs.length > 40) this.syncDiffs.shift();
     if (this.syncDiffs.length >= 20) { var m = median(this.syncDiffs); if (Math.abs(m) > 0.35) { this.t0 -= Math.max(-0.3, Math.min(0.3, m * 0.3)); this.syncDiffs = []; } }
   };
@@ -710,7 +786,7 @@ var M1Engine = (function () {
   P.ror = function (s, win) {
     win = win || this.cfg.rorWin || 30;
     if (win === 'fast') {                                   // 빠름: 지난 60초에 2차 곡선을 맞춰 지금 순간의 기울기(지연 약 5초)
-      if (this.events.tp === null || s < this.events.tp + 60) return this.ror(s, 30);
+      if (this.events.tp === null || s < this.events.tp + 80) return this.ror(s, 30);
       var qx = [], qy = [];
       for (var q = s - 59; q <= s; q++) { var bq = this.sec[q] && this.sec[q].bt; if (bq !== null && bq !== undefined) { qx.push(q - s); qy.push(bq); } }
       if (qx.length < 30) return this.ror(s, 30);
@@ -746,7 +822,7 @@ var M1Engine = (function () {
     var marks = this.cfg.marks || [140, 150, 159, 173];
     marks.forEach(function (m) {
       var key = 'm' + m; if (self.events[key] || s < 60 || b === null) return;
-      if (b >= m) { self.events[key] = s; self.alerts.push({ s: s, bt: m }); if (m === 150) self.events.t150 = s; }
+      if (b >= m) { self.events[key] = s; if (!self.silent) self.alerts.push({ s: s, bt: m }); if (m === 150) self.events.t150 = s; }
     });
   };
 
@@ -757,7 +833,9 @@ var M1Engine = (function () {
     this.lastOnes = this.lastOnes.filter(function (z) { return z.v > v - 10; });
     if (s > 120 && this.lastOnes.length >= 12) {                     // 10초 동안 초 자리가 한 번도 안 바뀜 = 타이머 정지
       var first = this.lastOnes[0].o, same = this.lastOnes.every(function (z) { return z.o === first; });
-      if (same) this._end('타이머 정지');
+      var bts = this.raw.filter(function (z) { return z.v > v - 10 && z.bt !== null; }).map(function (z) { return z.bt; });
+      var btMoving = bts.length >= 6 && Math.max.apply(null, bts) - Math.min.apply(null, bts) >= 2;   // 카메라 화면이 얼었다면 BT도 그대로
+      if (same && btMoving) this._end('타이머 정지');
     }
   };
   P._end = function (why) { this.mode = 'done'; this.endReason = why; };
@@ -800,15 +878,16 @@ var M1Engine = (function () {
     L.push('', 'power_changes,time_s,time,power');
     this.power.forEach(function (x) { L.push(['화력', Math.max(1, x.t), fmt(Math.max(1, x.t)), x.p].join(',')); });
     L.push('', 'event,time_s,time,BT');
-    var self = this, names = { tp: 'TP', fc: '1차 팝', drop: '배출' };
-    ['tp', 'fc', 'drop'].forEach(function (k) { var s = self.events[k]; if (s !== null && s !== undefined) { var b = self.bt(s); L.push([names[k], s, fmt(s), b !== null ? Math.round(b) : ''].join(',')); } });
+    var self = this, names = { tp: 'TP', de: '건조 종료', my: '마이야르', fc: '1차 팝', drop: '배출' };   // 옐로잉 = 로거의 '건조 종료'
+    if (this.events.de !== null && this.events.de !== undefined) { var bd = this.bt(this.events.de); L.push(['옐로잉', this.events.de, fmt(this.events.de), bd !== null ? Math.round(bd) : ''].join(',')); }
+    ['tp', 'de', 'my', 'fc', 'drop'].forEach(function (k) { var s = self.events[k]; if (s !== null && s !== undefined) { var b = self.bt(s); L.push([names[k], s, fmt(s), b !== null ? Math.round(b) : ''].join(',')); } });
     L.push('', 'batch,value', 'interval_s,1');
-    ['name', 'green', 'size', 'charge', 'air', 'drum', 'set', 'out', 'notes'].forEach(function (k) { if (meta[k] !== undefined && meta[k] !== '') L.push(k + ',' + String(meta[k]).replace(/[\r\n,]/g, ' ')); });
+    ['name', 'green', 'size', 'charge', 'air', 'drum', 'set', 'out', 'agtron', 'notes'].forEach(function (k) { if (meta[k] !== undefined && meta[k] !== '') L.push(k + ',' + String(meta[k]).replace(/[\r\n,]/g, ' ')); });
     return L.join('\n');
   };
 
   P.snapshot = function () { return { sec: this.sec, lastSec: this.lastSec, power: this.power, events: this.events, k: this.k, cfg: { fcTemp: this.cfg.fcTemp, startPower: this.cfg.startPower } }; };
-  P.restore = function (s, t0) { this.mode = 'run'; this.t0 = t0; this.sec = s.sec; this.lastSec = s.lastSec; this.power = s.power; this.events = s.events; this.k = s.k || 0; this.charge = t0 + 3.5; };
+  P.restore = function (s, t0) { this.mode = 'run'; this.t0 = t0; this.sec = s.sec; this.lastSec = s.lastSec; this.power = s.power; this.events = s.events; this.k = s.k || 0; this.charge = t0 + 3.5; if (s.cfg) { this.cfg.fcTemp = s.cfg.fcTemp; this.cfg.startPower = s.cfg.startPower; } };
   Engine.fmt = fmt;
   return Engine;
 })();
@@ -864,10 +943,9 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function nowV() { return source === 'file' ? video.currentTime : performance.now() / 1000; }
 
   function startCamera() {
-    // [제미나이 수정] 이미 카메라 스트림이 열려 있으면(처음 화면으로 돌아와 설정 변경 후 재시작 시) 권한 재요청 없이 즉시 진행
-    if (source === 'camera' && video.srcObject) { video.play(); afterSource(); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert('이 브라우저에서는 카메라를 쓸 수 없습니다. 사파리에서 https 주소로 열어주세요.'); return; }
-    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } })
+    if (source === 'camera' && video.srcObject) { var pp = video.play(); if (pp && pp.catch) pp.catch(function () {}); afterSource(); return; }   // 이미 켜진 카메라는 권한을 다시 묻지 않고 재사용
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: settings.res === '720' ? 1280 : 1920 }, height: { ideal: settings.res === '720' ? 720 : 1080 } } })
       .then(function (st) { source = 'camera'; video.srcObject = st; video.play(); afterSource(); })
       .catch(function (e) { alert('카메라를 열 수 없습니다: ' + e.message + '\n설정에서 사파리 카메라 권한을 확인해 주세요.'); });
   }
@@ -877,10 +955,19 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   }
   var looping = false;
   var resumeWanted = false;
-  function afterSource() { unlockAudio(); if (resumeWanted && source === 'camera') { resumeWanted = false; if (!looping) { looping = true; loop(); } $('spd-row').style.display = 'none'; doResume(); return; } show('align'); if (!looping) { looping = true; loop(); } $('spd-row').style.display = source === 'file' ? '' : 'none'; }
+  function afterSource() { unlockAudio(); if (source === 'camera') { setTimeout(setupZoom, 300); keepAwake(); } if (resumeWanted && source === 'camera') { resumeWanted = false; if (!looping) { looping = true; loop(); } $('spd-row').style.display = 'none'; doResume(); return; } show('align'); if (!looping) { looping = true; loop(); } $('spd-row').style.display = source === 'file' ? '' : 'none'; }
 
+
+  /* 화면 꺼짐 방지(사파리 16.4+): 카메라를 켜면 요청, 다른 앱에 다녀오면 다시 요청. 지원하지 않으면 조용히 넘어감 */
+  var wakeLock = null;
+  function keepAwake() {
+    try {
+      if (!('wakeLock' in navigator) || (wakeLock && !wakeLock.released)) return;
+      navigator.wakeLock.request('screen').then(function (w) { wakeLock = w; w.addEventListener && w.addEventListener('release', function () { wakeLock = null; }); }).catch(function () {});
+    } catch (e) {}
+  }
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) return; unlockAudio();
+    if (document.hidden) return; unlockAudio(); if (source === 'camera') keepAwake();
     if (source === 'camera' && video.paused) { var p = video.play(); if (p && p.catch) p.catch(function () {}); }
   });
   /* ---------- 화면 전환 ---------- */
@@ -912,7 +999,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     if (!source || video.readyState < 2) return;
     var t = performance.now(), g = grab(); if (!g) return;
     var scr = document.body.getAttribute('data-screen');
-    if (scr === 'align' && engine && engine.mode === 'run') { engine.feed(nowV(), g.img, g.boxes, theta); }   // 기록 중엔 칸 맞추기 화면에서도 기록 계속
+    checkFrozen(g);
+    if (scr === 'align' && engine && engine.mode === 'run') stepEngine(g, false);   // 기록 중엔 칸 맞추기 화면에서도 기록·종료·저장·알림 모두 계속
     if (scr === 'align') {
       Object.keys(boxes).forEach(function (k) {
         if (k === 'timer') { var r = M1.readBox(g.img, g.boxes.timer, 'timer', TEMPL.timer, theta); health.timer = r ? (r.d < 90 ? 2 : 1) : 0; lastRead.timer = r ? r.s.replace(/(\d\d)(\d\d)(\d\d)/, '$1:$2:$3') : '—'; }
@@ -920,17 +1008,49 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       });
       drawOverlay();
     } else if (scr === 'main' && engine) {
-      if (engine.mode !== 'done') {
-        var before = engine.mode;
-        engine.feed(nowV(), g.img, g.boxes, theta); engine.adapt(); maybeTrack(); autosave(); adaptTemplates(g);
-        Object.keys(engine.health).forEach(function (k) { health[k] = engine.health[k] ? 2 : 0; });
-        if (before === 'wait' && engine.mode === 'run') { beep(2); toast('투입 감지 — 기록 시작'); }
-        if (engine.mode === 'done' && before !== 'done') finish();
-        handleAlerts();
-      }
+      if (engine.mode !== 'done') stepEngine(g, true);
       drawOverlay(); render();
     }
     procMs = performance.now() - t; var dt = t - lastProc; lastProc = t; if (dt > 0) fps = fps * 0.8 + 200 / dt;
+  }
+
+
+  /* 엔진 한 걸음: 기록 화면과 칸 맞추기 화면이 똑같이 거침(종료·저장·알림 누락 방지) */
+  function stepEngine(g, onMain) {
+    var before = engine.mode;
+    engine.feed(nowV(), g.img, g.boxes, theta); engine.adapt();
+    if (onMain) maybeTrack();
+    autosave(); adaptTemplates(g);
+    if (onMain) Object.keys(engine.health).forEach(function (k) { health[k] = engine.health[k] ? 2 : 0; });
+    if (before === 'wait' && engine.mode === 'run') { beep(2); toast(engine.startedBy === 'timer' ? '패널 타이머 시작 감지 — 기록 시작' : engine.startedBy === 'manual' ? '수동 시작 — 기록 시작' : '투입 감지 — 기록 시작'); }
+    if (engine.notice) { toast(engine.notice); engine.notice = null; }
+    if (engine.mode === 'done' && before !== 'done') { finish(); if (!onMain) toast('기록이 끝났습니다 — 기록 화면에서 저장하세요'); }
+    handleAlerts();
+  }
+  /* 카메라 화면이 멈췄는지: 같은 픽셀이 3초 넘게 그대로면 경고(실제 카메라는 잡음 때문에 늘 조금씩 변함) */
+  var lastSig = null, sameSince = 0, frozenWarned = 0;
+  function checkFrozen(g) {
+    if (source !== 'camera') return;
+    var d = g.img.data, sig = 0, step = Math.max(4, Math.floor(d.length / 4 / 400)) * 4;
+    for (var i = 0; i < d.length; i += step) sig = (sig * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) % 1000000007;
+    var t = performance.now();
+    if (sig === lastSig) { if (!sameSince) sameSince = t; if (t - sameSince > 3000 && t - frozenWarned > 20000) { frozenWarned = t; beep(1); toast('카메라 화면이 멈춘 것 같습니다 — 사파리를 다시 띄우거나 카메라를 확인해 주세요'); } }
+    else { sameSince = 0; lastSig = sig; }
+  }
+
+
+  /* 카메라 줌: 기기·브라우저가 지원할 때만 막대를 보여줌 */
+  function setupZoom() {
+    var z = $('zoom-row'); z.style.display = 'none';
+    try {
+      var tr = video.srcObject && video.srcObject.getVideoTracks()[0], cap = tr && tr.getCapabilities ? tr.getCapabilities() : null;
+      if (!cap || !cap.zoom) return;
+      var sl = $('zoom'); sl.min = cap.zoom.min; sl.max = cap.zoom.max; sl.step = cap.zoom.step || 0.1;
+      var cur = tr.getSettings ? tr.getSettings().zoom : null; sl.value = load('zoom', cur || cap.zoom.min);
+      tr.applyConstraints({ advanced: [{ zoom: +sl.value }] }).catch(function () {});
+      sl.oninput = function () { tr.applyConstraints({ advanced: [{ zoom: +sl.value }] }).catch(function () {}); save('zoom', +sl.value); $('zoom-v').textContent = (+sl.value).toFixed(1) + '×'; };
+      $('zoom-v').textContent = (+sl.value).toFixed(1) + '×'; z.style.display = '';
+    } catch (e) {}
   }
 
   /* ---------- 정렬 오버레이 ---------- */
@@ -963,7 +1083,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     });
     if (inAlign) {
       var ok = Object.keys(boxes).every(function (k) { return health[k] === 2; });
-      $('align-status').textContent = ok ? '준비 완료 — 네 칸이 모두 읽힙니다' : '칸을 패널의 숫자에 맞춰 주세요 (초록이 되면 OK)';
+      $('align-status').textContent = (ok ? '준비 완료 — 네 칸이 모두 읽힙니다' : '칸을 패널의 숫자에 맞춰 주세요 (초록이 되면 OK)') + (source === 'camera' && vidW() ? ' · 카메라 ' + vidW() + '×' + vidH() : '');
       $('align-status').className = ok ? 'ok' : '';
     }
   }
@@ -1122,7 +1242,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     for (var s = 0; s < src.bt.length; s++) { var b = src.bt[s], a = src.at ? src.at[s] : null; if (b === null && a === null) continue; e.sec[s] = { bt: b, at: a === undefined ? null : a, ror: null }; last = s; }
     e.lastSec = last; e.events.tp = src.ev && src.ev.tp !== null && src.ev.tp !== undefined ? src.ev.tp : null;
     if (e.events.tp === null) { var lo = null; for (s = 5; s < Math.min(120, last); s++) { var x = e.bt(s); if (x !== null && (lo === null || x < lo.v)) lo = { s: s, v: x }; } e.events.tp = lo ? lo.s : 40; }
-    var out = { name: src.name, len: last, bt: [], at: [], ror: [], power: src.power || [], ev: src.ev || {}, t150: null }, r0 = e.events.tp + 40;
+    var out = { name: src.name, len: last, bt: [], at: [], ror: [], power: src.power || [], ev: src.ev || {}, t150: null }, r0 = e.events.tp + 15;
     for (s = 0; s <= last; s++) { out.bt.push(e.bt(s)); out.at.push(e.at(s)); out.ror.push(s >= r0 ? e.ror(s) : null); if (out.t150 === null && s > 60 && out.bt[s] !== null && out.bt[s] >= 150) out.t150 = s; }
     return out;
   }
@@ -1227,21 +1347,21 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function render() {
     if (!engine) return;
     var E = engine, s = E.lastSec, st = $('status');
-    if (E.mode === 'wait') { st.textContent = E.charge !== null ? '투입 감지됨 — 시간 맞추는 중' : '대기 중 · 투입을 기다립니다'; st.className = 'wait'; }
+    if (E.mode === 'wait') { var nb = E.raw.length ? E.raw[E.raw.length - 1].bt : null; st.textContent = E.charge !== null ? (E.manual ? '수동 시작 — 타이머 초에 맞추는 중 (몇 초)' : '투입 감지 — 진짜인지 확인 중 (약 8초)') : '대기 · 패널 타이머를 켜거나 투입하면 자동 시작' + (nb !== null ? ' · BT ' + nb + '℃' : ''); st.className = 'wait'; }
     else if (E.mode === 'run') { st.textContent = '● 기록 중 ' + M1Engine.fmt(E.now()); st.className = 'run'; }
     else { st.textContent = '종료 (' + E.endReason + ') · ' + M1Engine.fmt(s); st.className = 'done'; }
     var last = E.raw.length ? E.raw[E.raw.length - 1] : {};
     var bt = E.mode === 'run' || E.mode === 'done' ? E.bt(s) : last.bt, at = E.mode !== 'wait' ? E.at(s) : last.at;
     $('v-bt').textContent = fix(bt, 0); $('v-at').textContent = fix(at, 0);
-    $('v-ror').textContent = E.mode !== 'wait' && E.events.tp !== null && s >= E.events.tp + 40 ? fix(E.ror(s)) : '—';
+    $('v-ror').textContent = E.mode !== 'wait' && E.events.tp !== null && s >= E.events.tp + 15 ? fix(E.ror(s)) : '—';
     var rd = E.mode !== 'wait' ? E.rorDisp(s) : last.ror, s60 = E.mode !== 'wait' ? E.sum60(s) : null;
     $('v-disp').textContent = (rd === null || rd === undefined ? '—' : rd) + '  /  ' + (s60 === null ? '—' : s60);
     ['bt', 'at', 'ror', 'timer'].forEach(function (k) { $('h-' + k).className = 'dot ' + (health[k] === 2 ? 'g' : 'r'); });
     $('fps').textContent = fps.toFixed(1) + '장/초' + (trackInfo ? ' · ' + trackInfo : ''); $('rw').textContent = E.cfg.rorWin === 'fast' ? '빠름' : (E.cfg.rorWin || 30) + '초';
-    var ph = E.predict(0), pc = E.predict(-10), tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + 190) : '—';
+    var curP = E.power.length ? E.power[E.power.length - 1].p : 50, ph = E.predict(0), pc = curP - 10 >= 20 ? E.predict(-10) : null, tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + 190) : '—';
     $('p-hold').innerHTML = ph ? '30초 <b>' + fix(ph.r30) + '</b> · 60초 <b>' + fix(ph.r60) + '</b> · 팝 <b>' + (ph.passed ? '온도 지남' : ph.fc ? M1Engine.fmt(ph.fc) : '—') + '</b>' : '<span class="mute">예측은 1:30 이후, 1차 팝 전까지</span>';
-    $('p-cut').innerHTML = pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.passed ? '온도 지남' : pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
-    $('btn-start-now').style.display = E.mode === 'wait' ? '' : 'none';
+    $('p-cut').innerHTML = curP - 10 < 20 && ph ? '<span class="mute">최저 화력이라 더 내릴 수 없음</span>' : pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.passed ? '온도 지남' : pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
+    $('btn-start-now').style.display = E.mode === 'wait' ? '' : 'none'; $('btn-settings').style.display = E.mode === 'run' ? 'none' : '';
     var tlab = $('p-target-k');
     if (E.events.fc !== null && E.mode !== 'wait') {
       var cur = E.mode === 'run' ? E.now() : s, dev = Math.max(0, cur - E.events.fc), fcb = E.bt(E.events.fc), dB = bt !== null && fcb !== null ? Math.round(bt - fcb) : null;
@@ -1256,20 +1376,29 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var E = engine, w = chart.clientWidth, h = chart.clientHeight, L = 40, Rm = 36, T = 10, SB = 46, B = 22 + SB, pw = w - L - Rm, phh = h - T - B;
     cctx.clearRect(0, 0, w, h);
     var bgLen = BG && settings.bgOn ? BG.len : 0, tmax = Math.max(480, Math.ceil((Math.max(E.lastSec, 0, bgLen - 60) + 90) / 60) * 60), X = function (t) { return L + pw * t / tmax; };
-    var Yt = function (v) { return T + phh * (1 - (v - 50) / 200); }, Yr = function (v) { return T + phh * (1 - v / 25); };
+    var rTop = 25;                                             // RoR 축: 보이는 최댓값에 맞춰 5 단위로 늘림(최대 60)
+    if (E.mode !== 'wait' && E.events.tp !== null) for (var q = E.events.tp + 15; q <= E.lastSec; q++) { var rv = E.ror(q); if (rv !== null && rv > rTop - 1) rTop = rv + 1; }
+    if (BG && settings.bgOn) BG.ror.forEach(function (rv) { if (rv !== null && rv > rTop - 1) rTop = rv + 1; });
+    rTop = Math.min(60, Math.ceil(rTop / 5) * 5);
+    var Yt = function (v) { return T + phh * (1 - (v - 50) / 200); }, Yr = function (v) { return T + phh * (1 - v / rTop); };
     cctx.strokeStyle = 'rgba(148,163,184,.25)'; cctx.lineWidth = 1; cctx.fillStyle = '#94a3b8'; cctx.font = '11px -apple-system,sans-serif';
     for (var m = 0; m <= tmax; m += 60) { cctx.beginPath(); cctx.moveTo(X(m), T); cctx.lineTo(X(m), T + phh); cctx.stroke(); cctx.fillText(m / 60 + '분', X(m) - 8, T + phh + 15); }
     for (var v = 50; v <= 250; v += 50) { cctx.beginPath(); cctx.moveTo(L, Yt(v)); cctx.lineTo(L + pw, Yt(v)); cctx.stroke(); cctx.fillText(v, 8, Yt(v) + 4); }
-    for (var r = 0; r <= 25; r += 5) cctx.fillText(r, L + pw + 8, Yr(r) + 4);
+    for (var r = 0; r <= rTop; r += (rTop > 30 ? 10 : 5)) cctx.fillText(r, L + pw + 8, Yr(r) + 4);
     drawBg(X, Yt, Yr, L, T, pw, phh);
     drawPowerStrip(X, L, pw, T + phh + 22, T + phh + 22 + SB - 8, E);
     if (E.mode === 'wait') return;
     function line(fn, Y, col, wid, dash) { cctx.strokeStyle = col; cctx.lineWidth = wid; cctx.setLineDash(dash || []); cctx.beginPath(); var on = false; for (var s = 0; s <= E.lastSec; s++) { var y = fn(s); if (y === null || y === undefined) { on = false; continue; } if (!on) { cctx.moveTo(X(s), Y(y)); on = true; } else cctx.lineTo(X(s), Y(y)); } cctx.stroke(); cctx.setLineDash([]); }
     line(function (s) { return E.at(s); }, Yt, '#38bdf8', 1.5);
     line(function (s) { return E.bt(s); }, Yt, '#ff5d8f', 2.5);
-    var r0 = E.events.tp !== null ? E.events.tp + 40 : 1e9;
+    var r0 = E.events.tp !== null ? E.events.tp + 15 : 1e9;
     cctx.save(); cctx.beginPath(); cctx.rect(L, T, pw, phh); cctx.clip();
     line(function (s) { return s >= r0 ? E.ror(s) : null; }, Yr, '#22c55e', 2.5);
+    [['de', '옐로잉', '#facc15'], ['my', '마이야르', '#fb923c'], ['fc', '1차 팝', '#f43f5e'], ['drop', '배출', '#a78bfa']].forEach(function (m, i) {   // 표시한 구간
+      var t = E.events[m[0]]; if (t === null || t === undefined) return;
+      cctx.strokeStyle = m[2]; cctx.globalAlpha = 0.7; cctx.lineWidth = 1.5; cctx.setLineDash([5, 4]); cctx.beginPath(); cctx.moveTo(X(t), T); cctx.lineTo(X(t), T + phh); cctx.stroke(); cctx.setLineDash([]);
+      cctx.globalAlpha = 1; cctx.fillStyle = m[2]; cctx.font = 'bold 12px -apple-system,sans-serif'; cctx.fillText(m[1] + ' ' + M1Engine.fmt(t), X(t) + 4, T + 14 + (i % 2) * 15); cctx.font = '11px -apple-system,sans-serif';
+    });
     var fcT = E.cfg.fcTemp || 183;
     if (ph || pc) {                                        // 1차 팝 온도 기준선
       cctx.strokeStyle = 'rgba(244,63,94,.45)'; cctx.lineWidth = 1; cctx.setLineDash([2, 4]); cctx.beginPath(); cctx.moveTo(L, Yt(fcT)); cctx.lineTo(L + pw, Yt(fcT)); cctx.stroke(); cctx.setLineDash([]);
@@ -1292,15 +1421,30 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     ['fc', 'drop'].forEach(function (k) { var s = E.events[k]; if (s === null || s === undefined) return; cctx.strokeStyle = k === 'fc' ? '#f43f5e' : '#e2e8f0'; cctx.setLineDash([3, 3]); cctx.beginPath(); cctx.moveTo(X(s), T); cctx.lineTo(X(s), T + phh); cctx.stroke(); cctx.setLineDash([]); });
   }
 
-  function defName() { var n = new Date(); return String(n.getFullYear()).slice(2) + ('0' + (n.getMonth() + 1)).slice(-2) + ('0' + n.getDate()).slice(-2) + '_M1'; }
+  function today() { var n = new Date(); return String(n.getFullYear()).slice(2) + ('0' + (n.getMonth() + 1)).slice(-2) + ('0' + n.getDate()).slice(-2); }
+  function defName() { var c = load('day', { d: '', n: 0 }), k = c.d === today() ? c.n + 1 : 1; return today() + '_' + k; }   // 이름을 비워 두면 그날 몇 번째 배치인지
+  function usedName() { var c = load('day', { d: '', n: 0 }); save('day', { d: today(), n: c.d === today() ? c.n + 1 : 1 }); }
   function finish() {
+    if (!settings.name && engine && !engine.named) { engine.named = defName(); usedName(); }
     beep(3); render(); if (source === 'file') video.pause(); $('btn-drop').textContent = '배출'; clearRun();
-    var meta = { name: settings.name || defName(), green: settings.green, size: settings.size, charge: 170, air: 80, drum: 100, set: 220, notes: 'M1 실시간 앱으로 기록' };
-    save('lastCsv', engine.csv(meta)); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
+    $('in-g').value = engine.inG || settings.size || ''; $('out-g').value = engine.outG || ''; showLoss();
+    save('lastCsv', csvText()); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
   }
-  function csvText() { return engine ? engine.csv({ name: settings.name || defName(), green: settings.green, size: settings.size, charge: 170, air: 80, drum: 100, set: 220, notes: 'M1 실시간 앱으로 기록' }) : load('lastCsv', ''); }
+  function csvText() {
+    if (!engine) return load('lastCsv', '');
+    var E = engine, ev = E.events, f = M1Engine.fmt, inG = E.inG || settings.size, outG = E.outG || '', bits = [];
+    if (ev.de !== null && ev.de !== undefined) bits.push('옐로잉 ' + f(ev.de));
+    if (ev.my !== null && ev.my !== undefined) bits.push('마이야르 ' + f(ev.my));
+    if (inG && outG) bits.push('투입 ' + inG + 'g → 배출 ' + outG + 'g (감량 ' + ((inG - outG) / inG * 100).toFixed(1) + '%)');
+    bits.push('M1 실시간 앱 v2.4로 기록' + (E.startedBy ? ' · 시작: ' + ({ timer: '패널 타이머', bt: 'BT 급락', manual: '수동' })[E.startedBy] : '') + (E.reanchors ? ' · 시각 자동 보정' : ''));
+    return E.csv({ name: settings.name || E.named || defName(), green: settings.green, size: inG, out: outG, charge: 170, air: 80, drum: 100, set: 220, notes: bits.join(' · ') });
+  }
+  function showLoss() { var i = +$('in-g').value, o = +$('out-g').value; $('loss').textContent = i && o ? '감량 ' + ((i - o) / i * 100).toFixed(1) + '%' : ''; }
+  ['in-g', 'out-g'].forEach(function (id) {
+    $(id).addEventListener('input', function () { if (!engine) return; engine.inG = +$('in-g').value || null; engine.outG = +$('out-g').value || null; showLoss(); save('lastCsv', csvText()); });
+  });
   function downloadCsv() {
-    var txt = '\ufeff' + csvText(), name = (settings.name || defName()).replace(/[\\/:*?"<>|\s]+/g, '_') + '.csv';
+    var txt = '\ufeff' + csvText(), name = (settings.name || (engine && engine.named) || defName()).replace(/[\\/:*?"<>|\s]+/g, '_') + '.csv';
     try {                                                     // 아이패드: 공유 시트(파일 앱 저장·에어드롭)가 가능하면 우선
       if (navigator.canShare && window.File) { var file = new File([txt], name, { type: 'text/csv' }); if (navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: name }).catch(function () {}); return; } }
     } catch (e) {}
@@ -1351,13 +1495,21 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-refind', function () { var b = boxes.bt; runAuto((b[0] + b[2]) / 2 * vidW(), (b[1] + b[3]) / 2 * vidH()); });
   bind('btn-learn', function () { $('learn').style.display = $('learn').style.display === 'none' ? '' : 'none'; });
   bind('btn-learn-go', learn);
-  bind('btn-treset', function () { if (!confirm('숫자 틀을 처음 상태로 되돌릴까요?')) return; TEMPL = decodeT(DEFAULT_T); TEMPL0 = decodeT(DEFAULT_T); /* [제미나이 수정] 기준점(TEMPL0)도 함께 초기화 */ try { LS.removeItem('m1.T'); } catch (e) {} toast('숫자 틀을 초기화했습니다'); });
+  bind('btn-treset', function () { if (!confirm('숫자 틀을 처음 상태로 되돌릴까요?')) return; TEMPL = decodeT(DEFAULT_T); TEMPL0 = decodeT(DEFAULT_T); try { LS.removeItem('m1.T'); } catch (e) {} toast('숫자 틀을 초기화했습니다'); });
   bind('btn-ready', function () {
     if (engine && engine.mode === 'run') { saveGhost(); show('main'); toast('기록을 계속합니다'); return; }   // 기록 중이면 기록을 지우지 않고 돌아감
+    if (engine && engine.mode === 'done' && engine.lastSec > 30) { saveGhost(); show('main'); $('done-bar').style.display = ''; render(); return; }   // 막 끝난 기록이 있으면 저장 막대로
     saveGhost(); newEngine(); show('main'); $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
     if (source === 'file') { video.playbackRate = speed; video.currentTime = 0; video.play(); }
   });
   bind('btn-realign', function () { if (source === 'file') video.pause(); show('align'); });
+  function markToggle(key, label) {
+    if (!engine || engine.mode !== 'run') return;
+    if (engine.events[key] !== null && engine.events[key] !== undefined && engine.now() - engine.events[key] <= 10) { engine.events[key] = null; toast(label + ' 표시를 취소했습니다'); render(); return; }
+    engine.events[key] = engine.now(); toast(label + ' ' + M1Engine.fmt(engine.now()) + ' — 10초 안에 다시 누르면 취소'); render();
+  }
+  bind('btn-de', function () { markToggle('de', '옐로잉'); });
+  bind('btn-my', function () { markToggle('my', '마이야르'); });
   bind('btn-fc', function () {
     if (!engine || engine.mode !== 'run') return;
     if (engine.events.fc !== null && engine.now() - engine.events.fc <= 10) { engine.events.fc = null; toast('1차 팝 표시를 취소했습니다'); render(); return; }
@@ -1376,18 +1528,20 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   });
   bind('btn-start-now', function () { if (engine && engine.mode === 'wait') { engine.startManual(nowV()); toast('지금을 투입으로 표시 — 6초 뒤 기록 시작(지금부터 기록됨)'); } });
   bind('btn-diag', diagnose); bind('btn-diag2', diagnose);
+
+  function goHome() {
+    if (engine && engine.mode === 'run') { toast('기록 중에는 설정으로 갈 수 없습니다 — 종료한 뒤에'); return; }
+    $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
+    if (source === 'file') { video.pause(); $('file').value = ''; }
+    engine = null; show('home');
+    toast('설정을 바꾼 뒤 [카메라로 시작]을 누르면 이어서 진행합니다');
+  }
+  bind('btn-home', goHome); bind('btn-settings', goHome);
   bind('btn-csv', downloadCsv); bind('btn-copy', copyCsv);
   bind('btn-new', function () {
     $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
     if (source === 'file') { video.pause(); engine = null; $('file').value = ''; show('home'); toast('연습할 영상을 다시 골라 주세요'); }
     else { newEngine(); render(); toast('대기 중 · 다음 투입을 기다립니다'); }
-  });
-  // [제미나이 수정] 완료/종료 바에서 '처음 화면 (설정)'을 누르면 첫 페이지(#scr-home)로 이동해 생두 이름·팝 온도·배경 곡선 등을 바꿀 수 있게 함
-  bind('btn-home', function () {
-    $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
-    if (source === 'file') { video.pause(); engine = null; $('file').value = ''; }
-    show('home');
-    toast('설정을 바꾼 뒤 [카메라로 시작]을 누르면 이어서 진행합니다');
   });
   video.addEventListener('ended', function () { if (engine && engine.mode !== 'done') { engine.stop(); if (engine.mode === 'done') finish(); } });
   Array.prototype.forEach.call(document.querySelectorAll('.pw'), function (b) { b.addEventListener('click', function () { setPower(+b.getAttribute('data-p')); }); });
@@ -1395,6 +1549,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   ['fcTemp', 'startPower', 'name', 'green', 'size', 'rorWin'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = k === 'rorWin' ? (el.value === 'fast' ? 'fast' : +el.value) : (el.type === 'number' ? +el.value : el.value); save('settings', settings); if (k === 'rorWin') { if (engine) engine.cfg.rorWin = settings.rorWin; refreshBg(); } }); });
   $('set-adapt').checked = !!settings.adapt; $('set-adapt').addEventListener('change', function () { settings.adapt = $('set-adapt').checked; save('settings', settings); });
   $('set-bgAlign').value = settings.bgAlign; $('set-bgAlign').addEventListener('change', function () { settings.bgAlign = $('set-bgAlign').value; save('settings', settings); });
+  if (!settings.res) settings.res = '1080'; $('set-res').value = settings.res; $('set-res').addEventListener('change', function () { settings.res = $('set-res').value; save('settings', settings); toast('카메라를 다시 켤 때 적용됩니다'); });
   $('set-track').checked = !!settings.track; $('set-track').addEventListener('change', function () { settings.track = $('set-track').checked; save('settings', settings); });
   $('set-alerts').checked = !!settings.alerts; $('set-alerts').addEventListener('change', function () { settings.alerts = $('set-alerts').checked; save('settings', settings); });
   if (load('lastCsv', '')) $('btn-last').style.display = '';
