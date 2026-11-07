@@ -4,6 +4,7 @@
   v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
   v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
   v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
+  [제미나이 최소 수정] 완료 바(#done-bar)에 '처음 화면 (설정)' 버튼(#btn-home) 추가 및 startCamera 스트림 재사용 처리
 -->
 
 <html lang="ko"><head>
@@ -56,7 +57,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 #btn-fc{background:#881337;border-color:#f43f5e}#btn-drop{background:#334155}
 #done-bar{position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 70px);background:var(--card);border:1px solid var(--acc);border-radius:14px;padding:8px;z-index:3}
 #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 70px);transform:translateX(-50%);background:#0f766e;color:#fff;padding:12px 20px;border-radius:14px;font-size:18px;font-weight:700;z-index:9;box-shadow:0 6px 24px rgba(0,0,0,.4)}
-</style></head>
+</style><script type="text/javascript" nonce="130a875ca2654dfc8d39909ad03" src="//local.adguard.org?ts=1794020795810&amp;type=content-script&amp;dmn=contribution.usercontent.google.com&amp;url=https%3A%2F%2Fcontribution.usercontent.google.com%2Fdownload%3Fc%3DCgxiYXJkX3N0b3JhZ2USUBINcmVzcG9uc2VfZGF0YRo_CjBiOGMyYWQwOWQ0NjJhNWE5MDAwNjVmYTcyY2UyYjkzYzA3MzRjZjZlMjIzODI5NTESCxIHEMDv1OmYFBgB%26filename%3Dindex.html%26opi%3D103135050%26authuser%3D1&amp;app=chrome.exe&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1&amp;stealth=1&amp;st-dnt"></script><script type="text/javascript" nonce="130a875ca2654dfc8d39909ad03" src="//local.adguard.org?ts=1794020795810&amp;name=AdGuard%20Extra&amp;type=user-script"></script></head>
 <body data-screen="home">
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
@@ -131,7 +132,8 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   </div>
   <div id="done-bar" style="display:none">
     <b id="done-msg" style="margin:0 8px">기록이 끝났습니다</b>
-    <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-new">새 로스팅</button>
+    <!-- [제미나이 수정] 카메라 모드에서도 첫 페이지(설정창)로 돌아가 생두/팝 온도를 바꿀 수 있도록 '처음 화면 (설정)' 버튼(#btn-home) 추가 -->
+    <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button>
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
   <div id="ctrl">
@@ -862,6 +864,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function nowV() { return source === 'file' ? video.currentTime : performance.now() / 1000; }
 
   function startCamera() {
+    // [제미나이 수정] 이미 카메라 스트림이 열려 있으면(처음 화면으로 돌아와 설정 변경 후 재시작 시) 권한 재요청 없이 즉시 진행
+    if (source === 'camera' && video.srcObject) { video.play(); afterSource(); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert('이 브라우저에서는 카메라를 쓸 수 없습니다. 사파리에서 https 주소로 열어주세요.'); return; }
     navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } })
       .then(function (st) { source = 'camera'; video.srcObject = st; video.play(); afterSource(); })
@@ -1347,7 +1351,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-refind', function () { var b = boxes.bt; runAuto((b[0] + b[2]) / 2 * vidW(), (b[1] + b[3]) / 2 * vidH()); });
   bind('btn-learn', function () { $('learn').style.display = $('learn').style.display === 'none' ? '' : 'none'; });
   bind('btn-learn-go', learn);
-  bind('btn-treset', function () { if (!confirm('숫자 틀을 처음 상태로 되돌릴까요?')) return; TEMPL = decodeT(DEFAULT_T); try { LS.removeItem('m1.T'); } catch (e) {} toast('숫자 틀을 초기화했습니다'); });
+  bind('btn-treset', function () { if (!confirm('숫자 틀을 처음 상태로 되돌릴까요?')) return; TEMPL = decodeT(DEFAULT_T); TEMPL0 = decodeT(DEFAULT_T); /* [제미나이 수정] 기준점(TEMPL0)도 함께 초기화 */ try { LS.removeItem('m1.T'); } catch (e) {} toast('숫자 틀을 초기화했습니다'); });
   bind('btn-ready', function () {
     if (engine && engine.mode === 'run') { saveGhost(); show('main'); toast('기록을 계속합니다'); return; }   // 기록 중이면 기록을 지우지 않고 돌아감
     saveGhost(); newEngine(); show('main'); $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
@@ -1377,6 +1381,13 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
     if (source === 'file') { video.pause(); engine = null; $('file').value = ''; show('home'); toast('연습할 영상을 다시 골라 주세요'); }
     else { newEngine(); render(); toast('대기 중 · 다음 투입을 기다립니다'); }
+  });
+  // [제미나이 수정] 완료/종료 바에서 '처음 화면 (설정)'을 누르면 첫 페이지(#scr-home)로 이동해 생두 이름·팝 온도·배경 곡선 등을 바꿀 수 있게 함
+  bind('btn-home', function () {
+    $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
+    if (source === 'file') { video.pause(); engine = null; $('file').value = ''; }
+    show('home');
+    toast('설정을 바꾼 뒤 [카메라로 시작]을 누르면 이어서 진행합니다');
   });
   video.addEventListener('ended', function () { if (engine && engine.mode !== 'done') { engine.stop(); if (engine.mode === 'done') finish(); } });
   Array.prototype.forEach.call(document.querySelectorAll('.pw'), function (b) { b.addEventListener('click', function () { setPower(+b.getAttribute('data-p')); }); });
