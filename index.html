@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  M1 실시간 v2.5 (2026-11-08)
+  M1 실시간 v2.6 (2026-11-08)
   v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
   v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
   v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
@@ -8,6 +8,7 @@
   v2.4 실사용 2차 반영: 패널 타이머 시작 감지, RoR 일찍 표시·축 자동, 옐로잉·마이야르, 투입·배출 용량, 1080p·줌
   v2.4.1 iOS 17 확인: 화면 꺼짐 방지(Wake Lock)
   v2.5 카메라 영상 녹화(판독 개선용), 영상-기록 시각 관계를 CSV 메모에
+  v2.6 제미나이 v2.5 검토 반영: TP·알림 예열 오인 방지, 해상도 변경, 타이머 시작 엄격화, 녹화 정리, RoR 저장, CSV 순서
 -->
 
 <html lang="ko"><head>
@@ -65,7 +66,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
 <div id="scr-home" class="scr">
-  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.5</span></h1>
+  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.6</span></h1>
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
@@ -138,7 +139,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   </div>
   <div id="done-bar" style="display:none">
     <b id="done-msg" style="margin:0 8px">기록이 끝났습니다</b>
-    <label>투입 <input id="in-g" inputmode="decimal" style="width:70px">g</label> <label>배출 <input id="out-g" inputmode="decimal" style="width:70px" placeholder="냉각 후">g</label> <b id="loss" style="margin-right:8px"></b>
+    <span id="done-w"><label>투입 <input id="in-g" inputmode="decimal" style="width:70px">g</label> <label>배출 <input id="out-g" inputmode="decimal" style="width:70px" placeholder="냉각 후">g</label> <b id="loss" style="margin-right:8px"></b></span>
     <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-rec-save" style="display:none;border-color:#ef4444"></button><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button>
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
@@ -643,15 +644,16 @@ var M1Engine = (function () {
     var recent = ob.filter(function (z) { return z.v >= v - 5; }); if (recent.length < 6) return false;
     var kinds = {}; recent.forEach(function (z) { kinds[z.ones] = 1; }); if (Object.keys(kinds).length < 3) return false;
     var same = function (a, b) { return a === b || (a === 0 && b === 8) || (a === 8 && b === 0); };   // 타이머 칸에선 0과 8이 자주 헷갈림
-    function score(c) {                                        // 시작 전: 한 값으로 고정(무슨 숫자로 읽히든), 시작 뒤: 1초마다 흐름 — 따로 채점
-      var pre = ob.filter(function (z) { return z.v < c; }), post = ob.filter(function (z) { return z.v >= c; }), cnt = {}, mode = null;
-      pre.forEach(function (z) { cnt[z.ones] = (cnt[z.ones] || 0) + 1; if (mode === null || cnt[z.ones] > cnt[mode]) mode = z.ones; });
-      var po = 0, kinds = {}; post.forEach(function (z) { var e2 = Math.floor(z.v - c) % 10; if (same(e2, z.ones)) { po++; kinds[e2] = 1; } });
-      return { pre: pre.length, preOk: mode === null ? 0 : cnt[mode] / pre.length, post: post.length, postOk: post.length ? po / post.length : 0, kinds: Object.keys(kinds).length, tot: (mode === null ? 0 : cnt[mode]) + po };
+    function score(c) {                                        // 시작 전: 멈춘 0(8로 읽히기도), 시작 뒤: 1초마다 흐름 — 따로 채점
+      var pre = ob.filter(function (z) { return z.v < c; }), post = ob.filter(function (z) { return z.v >= c; }), zero = 0;
+      pre.forEach(function (z) { if (z.ones === 0 || z.ones === 8) zero++; });
+      var po = 0, kinds = {}, real = {};
+      post.forEach(function (z) { var e2 = Math.floor(z.v - c) % 10; if (same(e2, z.ones)) { po++; kinds[z.ones] = 1; if (z.ones !== 0 && z.ones !== 8) real[z.ones] = 1; } });   // 종류는 기대값이 아니라 실제로 읽힌 숫자로
+      return { pre: pre.length, preOk: pre.length ? zero / pre.length : 0, post: post.length, postOk: post.length ? po / post.length : 0, kinds: Object.keys(kinds).length, real: Object.keys(real).length, tot: zero + po };
     }
     var best = null;
     for (var c = v - 12; c <= v - 3; c += 0.05) { var r = score(c); if (!best || r.tot > best.tot) { best = r; best.c = c; } }
-    if (!best || best.pre < 3 || best.preOk < 0.75 || best.post < 6 || best.postOk < 0.85 || best.kinds < 3) return false;
+    if (!best || best.pre < 3 || best.preOk < 0.75 || best.post < 6 || best.postOk < 0.85 || best.kinds < 3 || best.real < 2) return false;   // 0·8 깜빡임만으로는 통과 못 함
     var hi = best.c; for (var c2 = best.c; c2 <= best.c + 1; c2 += 0.05) { if (score(c2).tot === best.tot) hi = c2; else break; }
     this.t0 = (best.c + hi) / 2; this.charge = this.t0 + 3.5; this.mode = 'run'; this.startedBy = 'timer'; this.t0Start = this.t0;
     var self = this; this.raw.forEach(function (z) { if (z.v >= self.t0) self._place(z); });
@@ -712,11 +714,11 @@ var M1Engine = (function () {
     return null;
   };
   P._bigOffset = function (r) {
-    if (r.v - this.t0 > 120 || (this.reanchors || 0) >= 2) return;      // 시작할 때 생긴 어긋남만
+    if (r.v - this.t0 > 240 || (this.reanchors || 0) >= 2) return;      // 시작할 때 생긴 어긋남만(실제 급락 뒤 120초 안 — 아래)
     this.big = (this.big || []).filter(function (z) { return z.v > r.v - 10; }); this.big.push({ v: r.v });
     if (this.big.length < 8) return;                                   // 최근 10초에 큰 어긋남이 8번 넘게 보일 때 확인
     var vDrop = this._findDrop();                                     // 1) 실제 투입(BT 급락) 시각
-    if (vDrop === null) return;
+    if (vDrop === null || r.v - vDrop > 120) return;
     var R = this.raw;
     var obs = R.filter(function (z) { return z.ones !== null && z.v >= vDrop - 3.5; });
     if (obs.length < 16) return;
@@ -739,7 +741,7 @@ var M1Engine = (function () {
     ['de', 'my', 'fc', 'drop'].forEach(function (k) { if (self.events[k] !== null && self.events[k] !== undefined) self.events[k] = shift(self.events[k]); });
     if (this.endAt !== undefined) this.endAt = shift(this.endAt);
     var old = this.events; this.events = { tp: null, de: old.de, my: old.my, fc: old.fc, drop: old.drop, t150: null };
-    this.buckets = {}; this.sec = {}; this.lastSec = -1; this.silent = true;
+    this.buckets = {}; this.sec = {}; this.lastSec = -1; this.alerts = []; this.silent = true;
     this.raw.forEach(function (z) { if (z.v >= self.t0) self._place(z); });
     this._finalize(this.vNow); this.silent = false;
     this.notice = '패널 타이머에 맞춰 시각을 ' + (o > 0 ? o.toFixed(0) + '초 당김' : (-o).toFixed(0) + '초 늦춤');
@@ -787,16 +789,23 @@ var M1Engine = (function () {
   /* 실제 RoR(℃/min): 최근 30초 BT 직선 기울기 */
   P.ror = function (s, win) {
     win = win || this.cfg.rorWin || 30;
+    var o = this.sec[s], key = 'r_' + win + '_' + (this.events.tp === null ? 'n' : this.events.tp);   // TP가 바뀌면(빠른 방식의 전환점) 다시 계산
+    if (o && o[key] !== undefined) return o[key];
+    var val = this._ror(s, win);
+    if (o && s <= this.lastSec - 5) o[key] = val;               // 확정된 지 5초 넘은 초는 한 번만 계산
+    return val;
+  };
+  P._ror = function (s, win) {
     if (win === 'fast') {                                   // 빠름: 지난 60초에 2차 곡선을 맞춰 지금 순간의 기울기(지연 약 5초)
-      if (this.events.tp === null || s < this.events.tp + 80) return this.ror(s, 30);
+      if (this.events.tp === null || s < this.events.tp + 80) return this._ror(s, 30);
       var qx = [], qy = [];
       for (var q = s - 59; q <= s; q++) { var bq = this.sec[q] && this.sec[q].bt; if (bq !== null && bq !== undefined) { qx.push(q - s); qy.push(bq); } }
-      if (qx.length < 30) return this.ror(s, 30);
+      if (qx.length < 30) return this._ror(s, 30);
       var S = [0, 0, 0, 0, 0], Y = [0, 0, 0];
       for (var j = 0; j < qx.length; j++) { var x = qx[j], x2 = x * x; S[0]++; S[1] += x; S[2] += x2; S[3] += x2 * x; S[4] += x2 * x2; Y[0] += qy[j]; Y[1] += x * qy[j]; Y[2] += x2 * qy[j]; }
       var A = [[S[0], S[1], S[2]], [S[1], S[2], S[3]], [S[2], S[3], S[4]]];   // 정규방정식 풀이(크래머)
       function det(M) { return M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]); }
-      var D = det(A); if (!D) return this.ror(s, 30);
+      var D = det(A); if (!D) return this._ror(s, 30);
       var A1 = [[S[0], Y[0], S[2]], [S[1], Y[1], S[3]], [S[2], Y[2], S[4]]];
       return det(A1) / D * 60;                              // x=0(지금)에서의 기울기
     }
@@ -817,13 +826,13 @@ var M1Engine = (function () {
 
   P._events = function (s) {
     var self = this, b = this.bt(s);
-    if (this.events.tp === null && s > 15 && s < 120 && b !== null) {      // TP: 최저점에서 2℃ 오르면 확정
+    if (this.events.tp === null && s > 15 && s < 180 && b !== null) {      // TP: 최저점에서 2℃ 오르면 확정 — 진짜 TP는 100℃ 안팎이라 135℃ 넘는 최저점(예열 중)은 인정 안 함
       var lo = null, ls = null; for (var k = 5; k <= s; k++) { var x = this.bt(k); if (x !== null && (lo === null || x < lo)) { lo = x; ls = k; } }
-      if (lo !== null && b >= lo + 2) this.events.tp = ls;
+      if (lo !== null && lo <= 135 && b >= lo + 2) this.events.tp = ls;
     }
     var marks = this.cfg.marks || [140, 150, 159, 173];
     marks.forEach(function (m) {
-      var key = 'm' + m; if (self.events[key] || s < 60 || b === null) return;
+      var key = 'm' + m; if (self.events[key] || self.events.tp === null || s < self.events.tp + 20 || b === null) return;   // 알림은 TP 뒤에만(일찍 시작해도 예열 온도로 울리지 않게)
       if (b >= m) { self.events[key] = s; if (!self.silent) self.alerts.push({ s: s, bt: m }); if (m === 150) self.events.t150 = s; }
     });
   };
@@ -881,8 +890,10 @@ var M1Engine = (function () {
     this.power.forEach(function (x) { L.push(['화력', Math.max(1, x.t), fmt(Math.max(1, x.t)), x.p].join(',')); });
     L.push('', 'event,time_s,time,BT');
     var self = this, names = { tp: 'TP', de: '건조 종료', my: '마이야르', fc: '1차 팝', drop: '배출' };   // 옐로잉 = 로거의 '건조 종료'
-    if (this.events.de !== null && this.events.de !== undefined) { var bd = this.bt(this.events.de); L.push(['옐로잉', this.events.de, fmt(this.events.de), bd !== null ? Math.round(bd) : ''].join(',')); }
-    ['tp', 'de', 'my', 'fc', 'drop'].forEach(function (k) { var s = self.events[k]; if (s !== null && s !== undefined) { var b = self.bt(s); L.push([names[k], s, fmt(s), b !== null ? Math.round(b) : ''].join(',')); } });
+    var rows = [];                                             // 시간 순서로, 옐로잉은 바로 뒤에 로거용 '건조 종료'를 같은 시각으로
+    ['tp', 'de', 'my', 'fc', 'drop'].forEach(function (k) { var s = self.events[k]; if (s === null || s === undefined) return; var b = self.bt(s), bb = b !== null ? Math.round(b) : '';
+      if (k === 'de') rows.push([s, 0, ['옐로잉', s, fmt(s), bb].join(',')]); rows.push([s, k === 'de' ? 1 : 0, [names[k], s, fmt(s), bb].join(',')]); });
+    rows.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).forEach(function (r) { L.push(r[2]); });
     L.push('', 'batch,value', 'interval_s,1');
     ['name', 'green', 'size', 'charge', 'air', 'drum', 'set', 'out', 'agtron', 'notes'].forEach(function (k) { if (meta[k] !== undefined && meta[k] !== '') L.push(k + ',' + String(meta[k]).replace(/[\r\n,]/g, ' ')); });
     return L.join('\n');
@@ -998,10 +1009,10 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function loop() {
     var interval = source === 'file' ? 250 / speed : 250;
     setTimeout(loop, Math.max(30, interval - procMs));
-    if (!source || video.readyState < 2) return;
-    var t = performance.now(), g = grab(); if (!g) return;
     var scr = document.body.getAttribute('data-screen');
-    checkFrozen(g);
+    if (!source || video.readyState < 2 || scr === 'home') return;   // 처음 화면(설정)에선 판독·멈춤 감시를 쉼
+    var t = performance.now(), g = grab(); if (!g) return;
+    if (engine && engine.mode !== 'done') checkFrozen(g);
     if (scr === 'align' && engine && engine.mode === 'run') stepEngine(g, false);   // 기록 중엔 칸 맞추기 화면에서도 기록·종료·저장·알림 모두 계속
     if (scr === 'align') {
       Object.keys(boxes).forEach(function (k) {
@@ -1020,12 +1031,13 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   /* 엔진 한 걸음: 기록 화면과 칸 맞추기 화면이 똑같이 거침(종료·저장·알림 누락 방지) */
   function stepEngine(g, onMain) {
     var before = engine.mode;
+    if (before === 'wait' && recOn() && nowV() - rec.startV > 150) recStart(true);   // 예열 대기가 길면 녹화 앞부분을 버리고 새로(투입 전 2분 반만 남김)
     engine.feed(nowV(), g.img, g.boxes, theta); engine.adapt();
     if (onMain) maybeTrack();
     autosave(); adaptTemplates(g);
     if (onMain) Object.keys(engine.health).forEach(function (k) { health[k] = engine.health[k] ? 2 : 0; });
     if (before === 'wait' && engine.mode === 'run') { beep(2); toast(engine.startedBy === 'timer' ? '패널 타이머 시작 감지 — 기록 시작' : engine.startedBy === 'manual' ? '수동 시작 — 기록 시작' : '투입 감지 — 기록 시작'); }
-    if (engine.notice) { toast(engine.notice); engine.notice = null; }
+    if (engine.notice) { toast(engine.notice); engine.notice = null; alertShown = engine.alerts.length; }
     if (engine.mode === 'done' && before !== 'done') { finish(); if (!onMain) toast('기록이 끝났습니다 — 기록 화면에서 저장하세요'); }
     handleAlerts();
   }
@@ -1326,7 +1338,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
 
   function newEngine() {
     engine = new M1Engine({ T: TEMPL, fcTemp: +settings.fcTemp || 183, startPower: +settings.startPower || 50, rorWin: settings.rorWin === 'fast' ? 'fast' : (+settings.rorWin || 30), marks: [140, 150, 159, 173] });
-    alertShown = 0; renderPower();
+    alertShown = 0; renderPower(); if ($('out-g')) { $('out-g').value = ''; $('loss').textContent = ''; }
   }
   function setPower(p) { if (!engine) return; engine.setPower(p); renderPower(); }
   function renderPower() {
@@ -1420,7 +1432,6 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     });
     cctx.restore();
 
-    ['fc', 'drop'].forEach(function (k) { var s = E.events[k]; if (s === null || s === undefined) return; cctx.strokeStyle = k === 'fc' ? '#f43f5e' : '#e2e8f0'; cctx.setLineDash([3, 3]); cctx.beginPath(); cctx.moveTo(X(s), T); cctx.lineTo(X(s), T + phh); cctx.stroke(); cctx.setLineDash([]); });
   }
 
   function today() { var n = new Date(); return String(n.getFullYear()).slice(2) + ('0' + (n.getMonth() + 1)).slice(-2) + ('0' + n.getDate()).slice(-2); }
@@ -1429,7 +1440,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function finish() {
     if (!settings.name && engine && !engine.named) { engine.named = defName(); usedName(); }
     beep(3); recStop(); render(); if (source === 'file') video.pause(); $('btn-drop').textContent = '배출'; clearRun();
-    $('in-g').value = engine.inG || settings.size || ''; $('out-g').value = engine.outG || ''; showLoss();
+    $('done-w').style.display = ''; $('in-g').value = engine.inG || settings.size || ''; $('out-g').value = engine.outG || ''; showLoss();
     save('lastCsv', csvText()); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
   }
   function csvText() {
@@ -1438,8 +1449,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     if (ev.de !== null && ev.de !== undefined) bits.push('옐로잉 ' + f(ev.de));
     if (ev.my !== null && ev.my !== undefined) bits.push('마이야르 ' + f(ev.my));
     if (inG && outG) bits.push('투입 ' + inG + 'g → 배출 ' + outG + 'g (감량 ' + ((inG - outG) / inG * 100).toFixed(1) + '%)');
-    if (rec && E.t0 !== null) { var a0 = (E.t0Start !== undefined ? E.t0Start : E.t0) - rec.startV, a1 = E.t0 - rec.startV; bits.push('녹화 영상 ' + a0.toFixed(2) + '초 = 기록 0초' + (Math.abs(a1 - a0) >= 0.2 ? ' (끝날 때 ' + a1.toFixed(2) + '초)' : '')); }
-    bits.push('M1 실시간 앱 v2.5로 기록' + (E.startedBy ? ' · 시작: ' + ({ timer: '패널 타이머', bt: 'BT 급락', manual: '수동' })[E.startedBy] : '') + (E.reanchors ? ' · 시각 자동 보정' : ''));
+    if (rec && rec.engine === E && E.t0 !== null) { var a0 = (E.t0Start !== undefined ? E.t0Start : E.t0) - rec.startV, a1 = E.t0 - rec.startV; bits.push('녹화 영상 ' + a0.toFixed(2) + '초 = 기록 0초' + (Math.abs(a1 - a0) >= 0.2 ? ' (끝날 때 ' + a1.toFixed(2) + '초)' : '')); }
+    bits.push('M1 실시간 앱 v2.6로 기록' + (E.startedBy ? ' · 시작: ' + ({ timer: '패널 타이머', bt: 'BT 급락', manual: '수동' })[E.startedBy] : '') + (E.reanchors ? ' · 시각 자동 보정' : ''));
     return E.csv({ name: settings.name || E.named || defName(), green: settings.green, size: inG, out: outG, charge: 170, air: 80, drum: 100, set: 220, notes: bits.join(' · ') });
   }
   function showLoss() { var i = +$('in-g').value, o = +$('out-g').value; $('loss').textContent = i && o ? '감량 ' + ((i - o) / i * 100).toFixed(1) + '%' : ''; }
@@ -1464,25 +1475,25 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
 
   /* ---------- 카메라 영상 녹화(판독 개선용): 대기에 들어갈 때 시작, 기록이 끝나면 멈춤 ---------- */
   var rec = null;
-  function recStart() {
-    if (!settings.rec || source !== 'camera' || !video.srcObject) return;
+  function recStart(quiet) {
+    if (!settings.rec || source !== 'camera' || !video.srcObject) { showRecBtn(); return; }
     if (typeof MediaRecorder === 'undefined') { toast('이 브라우저는 영상 녹화를 지원하지 않습니다'); return; }
-    if (rec && rec.blob && !rec.saved) toast('저장하지 않은 지난 녹화는 지워집니다');
-    recStop();
+    if (!quiet && rec && !rec.saved && rec.engine && rec.engine.mode === 'done') toast('저장하지 않은 지난 녹화는 지워집니다');
+    if (rec) rec.discard = true; recStop();
     try {
       var types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'], type = '';
       for (var i = 0; i < types.length; i++) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(types[i])) { type = types[i]; break; }
       var opt = { videoBitsPerSecond: 600000 }; if (type) opt.mimeType = type;      // 거의 정지 장면이라 0.6Mbps로도 숫자가 선명(7분 약 30MB, 대화창에 올릴 수 있는 크기)
-      var mr = new MediaRecorder(video.srcObject, opt), r = { mr: mr, chunks: [], startV: nowV(), type: mr.mimeType || type || 'video/mp4', blob: null, saved: false };
+      var mr = new MediaRecorder(video.srcObject, opt), r = { mr: mr, chunks: [], startV: nowV(), type: mr.mimeType || type || 'video/mp4', blob: null, saved: false, engine: engine };
       mr.ondataavailable = function (e) { if (e.data && e.data.size) r.chunks.push(e.data); };
-      mr.onstop = function () { r.blob = new Blob(r.chunks, { type: r.type }); r.chunks = []; showRecBtn(); };
+      mr.onstop = function () { if (r.discard) { r.chunks = []; return; } r.blob = new Blob(r.chunks, { type: r.type }); r.chunks = []; showRecBtn(); };
       mr.start(1000); rec = r;
     } catch (e) { rec = null; toast('녹화를 시작하지 못했습니다'); }
   }
   function recStop() { if (rec && rec.mr && rec.mr.state !== 'inactive') { try { rec.mr.stop(); } catch (e) {} } }
   function recOn() { return !!(rec && rec.mr && rec.mr.state === 'recording'); }
   function showRecBtn() {
-    var b = $('btn-rec-save'); if (!rec || !rec.blob) { b.style.display = 'none'; return; }
+    var b = $('btn-rec-save'); if (!rec || !rec.blob || rec.engine !== engine) { b.style.display = 'none'; return; }   // 이 배치의 녹화만
     b.style.display = ''; b.textContent = '녹화 영상 저장 (' + Math.round(rec.blob.size / 1048576) + 'MB)';
   }
   function recSave() {
@@ -1560,7 +1571,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-stop', function () {
     if (!engine) return;
     if (engine.mode === 'run') { if (confirm('기록을 끝낼까요?')) { engine.stop(); finish(); } }
-    else if (engine.mode === 'wait') { engine.stop(); recStop(); if (source === 'file') video.pause(); $('done-csv').style.display = 'none'; $('done-msg').textContent = '대기를 멈췄습니다'; $('done-bar').style.display = ''; render(); }
+    else if (engine.mode === 'wait') { engine.stop(); recStop(); if (source === 'file') video.pause(); $('done-csv').style.display = 'none'; $('done-w').style.display = 'none'; $('done-msg').textContent = '대기를 멈췄습니다'; $('done-bar').style.display = ''; render(); }
     else toast('이미 끝난 기록입니다 — 새 로스팅을 누르세요');
   });
   bind('btn-start-now', function () { if (engine && engine.mode === 'wait') { engine.startManual(nowV()); toast('지금을 투입으로 표시 — 6초 뒤 기록 시작(지금부터 기록됨)'); } });
@@ -1587,7 +1598,9 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   $('set-rec').checked = !!settings.rec; $('set-rec').addEventListener('change', function () { settings.rec = $('set-rec').checked; save('settings', settings); });
   $('set-adapt').checked = !!settings.adapt; $('set-adapt').addEventListener('change', function () { settings.adapt = $('set-adapt').checked; save('settings', settings); });
   $('set-bgAlign').value = settings.bgAlign; $('set-bgAlign').addEventListener('change', function () { settings.bgAlign = $('set-bgAlign').value; save('settings', settings); });
-  if (!settings.res) settings.res = '1080'; $('set-res').value = settings.res; $('set-res').addEventListener('change', function () { settings.res = $('set-res').value; save('settings', settings); toast('카메라를 다시 켤 때 적용됩니다'); });
+  if (!settings.res) settings.res = '1080'; $('set-res').value = settings.res; $('set-res').addEventListener('change', function () { settings.res = $('set-res').value; save('settings', settings);
+    if (source === 'camera' && video.srcObject) { try { video.srcObject.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} video.srcObject = null; source = null; }   // 재사용하지 않고 새 해상도로 다시 열리게
+    toast('해상도를 바꿨습니다 — [카메라로 시작]을 누르면 적용됩니다'); });
   $('set-track').checked = !!settings.track; $('set-track').addEventListener('change', function () { settings.track = $('set-track').checked; save('settings', settings); });
   $('set-alerts').checked = !!settings.alerts; $('set-alerts').addEventListener('change', function () { settings.alerts = $('set-alerts').checked; save('settings', settings); });
   if (load('lastCsv', '')) $('btn-last').style.display = '';
