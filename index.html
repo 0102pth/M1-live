@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  M1 실시간 v2.8 (2026-11-08)
+  M1 실시간 v2.8.1 (2026-11-08)
   v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
   v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
   v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
@@ -11,6 +11,7 @@
   v2.6 제미나이 v2.5 검토 반영: TP·알림 예열 오인 방지, 해상도 변경, 타이머 시작 엄격화, 녹화 정리, RoR 저장, CSV 순서
   v2.7 재현 코파일럿(BT 기준 화력 알림·기준 대비 속도), 내 배치 보관함·별점, 같은 생두 자동 불러오기, 생두 정보
   v2.8 로거 통일·드라이브 연동: 날짜_생두 이름, 의도·그날 순번·생두 정보·별점을 CSV 칸으로, 로거 보관함(.json) 불러오기
+  v2.8.1 로스팅 로그 바로 열기 버튼
 -->
 
 <html lang="ko"><head>
@@ -70,10 +71,11 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
 <div id="scr-home" class="scr">
-  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.8</span></h1>
+  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.8.1</span></h1>
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
+    <a href="https://claude.ai/artifact/W44mDTe3PXTnU636qeAvXz" target="_blank" rel="noopener" style="display:inline-block;padding:10px 16px;border-radius:12px;border:1px solid #a78bfa;color:#e9d5ff;text-decoration:none;margin:6px 0">📒 로스팅 로그 열기</a>
     <button id="btn-resume" class="big" style="display:none;background:#7c2d12;border-color:#f97316"></button>
     <label style="display:inline-block"><span class="mute">연습:</span> <input id="file" type="file" accept="video/*" style="width:220px"></label>
   </div>
@@ -152,7 +154,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   <div id="done-bar" style="display:none">
     <b id="done-msg" style="margin:0 8px">기록이 끝났습니다</b>
     <span id="done-w"><label>별점 <select id="rating" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:6px"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label> <label>투입 <input id="in-g" inputmode="decimal" style="width:70px">g</label> <label>배출 <input id="out-g" inputmode="decimal" style="width:70px" placeholder="냉각 후">g</label> <b id="loss" style="margin-right:8px"></b></span>
-    <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-rec-save" style="display:none;border-color:#ef4444"></button><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button>
+    <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-rec-save" style="display:none;border-color:#ef4444"></button><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button><a href="https://claude.ai/artifact/W44mDTe3PXTnU636qeAvXz" target="_blank" rel="noopener" style="display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #a78bfa;color:#e9d5ff;text-decoration:none;margin-left:6px">📒 로그 열기</a>
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
   <div id="ctrl">
