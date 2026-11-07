@@ -1,4 +1,11 @@
 <!doctype html>
+<!--
+  M1 실시간 v2.2 (2026-11-07)
+  v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
+  v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
+  v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
+-->
+
 <html lang="ko"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
@@ -54,7 +61,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
 <div id="scr-home" class="scr">
-  <h1>M1 실시간</h1>
+  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.2</span></h1>
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
