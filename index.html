@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  M1 실시간 v2.6 (2026-11-08)
+  M1 실시간 v2.8 (2026-11-08)
   v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
   v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
   v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
@@ -9,6 +9,8 @@
   v2.4.1 iOS 17 확인: 화면 꺼짐 방지(Wake Lock)
   v2.5 카메라 영상 녹화(판독 개선용), 영상-기록 시각 관계를 CSV 메모에
   v2.6 제미나이 v2.5 검토 반영: TP·알림 예열 오인 방지, 해상도 변경, 타이머 시작 엄격화, 녹화 정리, RoR 저장, CSV 순서
+  v2.7 재현 코파일럿(BT 기준 화력 알림·기준 대비 속도), 내 배치 보관함·별점, 같은 생두 자동 불러오기, 생두 정보
+  v2.8 로거 통일·드라이브 연동: 날짜_생두 이름, 의도·그날 순번·생두 정보·별점을 CSV 칸으로, 로거 보관함(.json) 불러오기
 -->
 
 <html lang="ko"><head>
@@ -61,12 +63,14 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 #btn-fc{background:#881337;border-color:#f43f5e}#btn-drop{background:#334155}
 #done-bar{position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 70px);background:var(--card);border:1px solid var(--acc);border-radius:14px;padding:8px;z-index:3}
 #toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 70px);transform:translateX(-50%);background:#0f766e;color:#fff;padding:12px 20px;border-radius:14px;font-size:18px;font-weight:700;z-index:9;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+#guide-banner{display:none;position:absolute;left:50%;top:8px;transform:translateX(-50%);padding:10px 18px;border-radius:12px;background:#4c1d95;color:#fff;font-size:20px;border:2px solid #a78bfa;box-shadow:0 4px 18px rgba(0,0,0,.4);white-space:nowrap;z-index:5}
+#guide-banner.on{display:block}#guide-banner.strong{background:#7c3aed;font-size:24px}
 </style></head>
 <body data-screen="home">
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
 <div id="scr-home" class="scr">
-  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.6</span></h1>
+  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.8</span></h1>
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
@@ -79,11 +83,17 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <label>투입 때 화력 <input id="set-startPower" type="number" step="10" style="width:70px"></label>
     <label>투입량 <input id="set-size" type="number" style="width:80px">g</label>
     <label>RoR 계산 구간 <select id="set-rorWin" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="fast">빠름 (지연 약 6초, 기본)</option><option value="30">30초 (지연 약 15초)</option><option value="45">45초 (지연 약 22초)</option><option value="60">60초 (매끄러움, 지연 약 30초)</option></select></label><br>
-    <label>배치 이름 <input id="set-name" style="width:200px" placeholder="비우면 날짜_번호"></label>
-    <label>생두 <input id="set-green" style="width:240px"></label><br>
+    <label>배치 이름 <input id="set-name" style="width:200px" placeholder="비우면 날짜_생두"></label>
+    <label>생두 <input id="set-green" list="bean-list" style="width:240px" placeholder="지난 생두는 목록에서 고르기"></label><datalist id="bean-list"></datalist><br>
+    <label>이번 배치의 의도 <input id="set-intent" style="width:420px" placeholder="예: 단맛을 늘리려고 159→155℃에서 50으로 당김"></label><br>
+    <details style="margin:6px 0"><summary class="mute" style="font-size:14px">생두 정보 (선택 — 생두별로 기억, CSV 메모에 남음)</summary>
+      <label>원산지 <input id="bean-origin" style="width:120px"></label> <label>품종 <input id="bean-variety" style="width:120px"></label> <label>가공 <input id="bean-process" style="width:110px" placeholder="워시드 등"></label><br>
+      <label>고도 <input id="bean-alt" inputmode="decimal" style="width:70px">m</label> <label>수분 <input id="bean-moist" inputmode="decimal" style="width:60px">%</label> <label>밀도 <input id="bean-dens" inputmode="decimal" style="width:70px">g/L</label>
+    </details>
     <label><input id="set-alerts" type="checkbox" style="width:auto"> 140·150·159·173℃ 알림</label>
     <label><input id="set-track" type="checkbox" style="width:auto"> 기록 중 칸 자동 따라가기</label>
     <label><input id="set-adapt" type="checkbox" style="width:auto"> 숫자 틀 자동 적응</label>
+    <label><input id="set-guide" type="checkbox" style="width:auto"> 기준 배치 재현 알림 (배경 배치의 화력 변경을 같은 BT에서 알려줌)</label>
     <label><input id="set-rec" type="checkbox" style="width:auto"> 카메라 영상도 녹화 (판독 개선용, 7분에 약 30MB)</label>
     <label>카메라 해상도 <select id="set-res" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="1080">1080p (숫자 더 선명, 기본)</option><option value="720">720p (기기가 느릴 때)</option></select></label>
   </div>
@@ -91,6 +101,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <b>배경 곡선</b> <span class="mute" style="font-size:13px">— 지난 배치를 실시간 화면과 같은 방식으로 다시 그려 흐리게 깝니다</span><br>
     <label>기준 배치 <select id="bg-sel" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="">없음</option></select></label>
     <label><span class="mute">로그 CSV 불러오기:</span> <input id="bg-file" type="file" accept=".csv,text/csv" style="width:220px"></label>
+    <label><span class="mute">내 배치 보관함 채우기 (로거가 드라이브에 쓴 보관함 .json 또는 CSV 여러 개):</span> <input id="lib-files" type="file" multiple accept=".csv,.json,text/csv,application/json" style="width:220px"></label>
     <label>겹치는 기준 <select id="set-bgAlign" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="150">BT 맞춤 (150℃ 도달 시각, 그 전엔 점진)</option><option value="charge">투입 시각</option></select></label>
     <div class="mute" style="font-size:13px">지금: <span id="bg-label">없음</span></div>
   </div>
@@ -132,14 +143,15 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
       <div class="num"><div class="k" id="p-target-k">목표 1차 팝 (150℃+3:10)</div><div class="v" id="p-target" style="font-size:28px">—</div></div>
     </div>
   </div>
-  <div id="chart-wrap"><canvas id="chart"></canvas></div>
+  <div id="chart-wrap" style="position:relative"><canvas id="chart"></canvas><div id="guide-banner"></div></div>
   <div id="pred">
     <div><span class="tag" style="color:#22c55e">유지</span><span id="p-hold"></span></div>
     <div><span class="tag" style="color:#f59e0b">−10</span><span id="p-cut"></span></div>
+    <div id="p-guide-row" style="display:none"><span class="tag" style="color:#a78bfa">재현</span><span id="p-guide"></span></div>
   </div>
   <div id="done-bar" style="display:none">
     <b id="done-msg" style="margin:0 8px">기록이 끝났습니다</b>
-    <span id="done-w"><label>투입 <input id="in-g" inputmode="decimal" style="width:70px">g</label> <label>배출 <input id="out-g" inputmode="decimal" style="width:70px" placeholder="냉각 후">g</label> <b id="loss" style="margin-right:8px"></b></span>
+    <span id="done-w"><label>별점 <select id="rating" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:6px"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label> <label>투입 <input id="in-g" inputmode="decimal" style="width:70px">g</label> <label>배출 <input id="out-g" inputmode="decimal" style="width:70px" placeholder="냉각 후">g</label> <b id="loss" style="margin-right:8px"></b></span>
     <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-rec-save" style="display:none;border-color:#ef4444"></button><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button>
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
@@ -895,7 +907,7 @@ var M1Engine = (function () {
       if (k === 'de') rows.push([s, 0, ['옐로잉', s, fmt(s), bb].join(',')]); rows.push([s, k === 'de' ? 1 : 0, [names[k], s, fmt(s), bb].join(',')]); });
     rows.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).forEach(function (r) { L.push(r[2]); });
     L.push('', 'batch,value', 'interval_s,1');
-    ['name', 'green', 'size', 'charge', 'air', 'drum', 'set', 'out', 'agtron', 'notes'].forEach(function (k) { if (meta[k] !== undefined && meta[k] !== '') L.push(k + ',' + String(meta[k]).replace(/[\r\n,]/g, ' ')); });
+    ['name', 'green', 'size', 'charge', 'air', 'drum', 'set', 'out', 'agtron', 'notes', 'batchno', 'origin', 'variety', 'process', 'alt', 'moist', 'dens', 'intent', 'rating'].forEach(function (k) { if (meta[k] !== undefined && meta[k] !== '') L.push(k + ',' + String(meta[k]).replace(/[\r\n,]/g, ' ')); });
     return L.join('\n');
   };
 
@@ -942,6 +954,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   var theta = load('theta', 0) || 0;
   var settings = load('settings', { fcTemp: 183, startPower: 50, name: '', green: '', size: 125, alerts: true });
   if (settings.track === undefined) settings.track = true;
+  if (settings.guide === undefined) settings.guide = true;
   if (settings.adapt === undefined) settings.adapt = true;
   if (!settings.bgAlign) settings.bgAlign = '150';
   if (!settings.v2) { settings.rorWin = 'fast'; settings.v2 = 1; save('settings', settings); }
@@ -1037,7 +1050,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     autosave(); adaptTemplates(g);
     if (onMain) Object.keys(engine.health).forEach(function (k) { health[k] = engine.health[k] ? 2 : 0; });
     if (before === 'wait' && engine.mode === 'run') { beep(2); toast(engine.startedBy === 'timer' ? '패널 타이머 시작 감지 — 기록 시작' : engine.startedBy === 'manual' ? '수동 시작 — 기록 시작' : '투입 감지 — 기록 시작'); }
-    if (engine.notice) { toast(engine.notice); engine.notice = null; alertShown = engine.alerts.length; }
+    if (engine.notice) { toast(engine.notice); engine.notice = null; alertShown = engine.alerts.length; G = null; }
+    guideStep(); updBanner();
     if (engine.mode === 'done' && before !== 'done') { finish(); if (!onMain) toast('기록이 끝났습니다 — 기록 화면에서 저장하세요'); }
     handleAlerts();
   }
@@ -1263,21 +1277,22 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function bgSource() {
     var k = settings.bg; if (!k) return null;
     if (k === 'file') return load('bgFile', null);
+    if (k.indexOf('lib:') === 0) { var it = libGet(k.slice(4)); return it ? parseLogCsv(it.csv, it.name) : null; }
     var i = +k; return PRESETS[i] || null;
   }
-  function refreshBg() { var src = bgSource(); BG = src ? buildBg(src) : null; var lab = $('bg-label'); if (lab) lab.textContent = BG ? BG.name : '없음'; }
+  function refreshBg() { G = null; var src = bgSource(); BG = src ? buildBg(src) : null; var lab = $('bg-label'); if (lab) lab.textContent = BG ? BG.name : '없음'; }
   function parseLogCsv(txt, fname) {
-    var bt = [], at = [], power = [], ev = { tp: null, fc: null, drop: null }, name = fname.replace(/\.csv$/i, ''), sec = null;
+    var bt = [], at = [], power = [], ev = { tp: null, fc: null, drop: null }, name = fname.replace(/\.csv$/i, ''), sec = null, green = '', size = null;
     txt.replace(/^\ufeff/, '').split(/\r?\n/).forEach(function (line) {
       var c = line.split(','); if (!line.trim()) { sec = null; return; }
       if (c[0] === 'time_s') { sec = 'd'; return; } if (c[0] === 'power_changes') { sec = 'p'; return; } if (c[0] === 'event') { sec = 'e'; return; } if (c[0] === 'batch') { sec = 'b'; return; }
       if (sec === 'd' && /^\d+$/.test(c[0])) { var s = +c[0]; bt[s] = c[2] !== '' && c[2] !== undefined ? +c[2] : null; at[s] = c[3] !== '' && c[3] !== undefined ? +c[3] : null; }
       else if (sec === 'p' && c.length >= 4) power.push([+c[1], +c[3]]);
-      else if (sec === 'e') { var key = { 'TP': 'tp', '1차 팝': 'fc', '배출': 'drop' }[c[0]]; if (key) ev[key] = +c[1]; }
-      else if (sec === 'b' && c[0] === 'name' && c[1]) name = c[1];
+      else if (sec === 'e') { var key = { 'TP': 'tp', '건조 종료': 'de', '옐로잉': 'de', '마이야르': 'my', '1차 팝': 'fc', '배출': 'drop' }[c[0]]; if (key) ev[key] = +c[1]; }
+      else if (sec === 'b' && c[1]) { if (c[0] === 'name') name = c[1]; else if (c[0] === 'green') green = c[1]; else if (c[0] === 'size') size = +c[1]; }
     });
     for (var i = 0; i < bt.length; i++) { if (bt[i] === undefined) bt[i] = null; if (at[i] === undefined) at[i] = null; }
-    return { name: name, bt: bt, at: at, power: power, ev: ev };
+    return { name: name, green: green, size: size, bt: bt, at: at, power: power, ev: ev };
   }
   var bgSh = 0, bgShAt = -1;
   function bgShift() {                                        // 150℃ 맞춤: 150℃ 전에는 지금 BT에 배경이 닿은 시각과 비교해 조금씩, 150℃ 뒤엔 고정
@@ -1331,6 +1346,111 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     cctx.restore();
   }
 
+
+
+  /* ---------- 내 배치 보관함(아이패드 안, 배치당 약 10KB) · 같은 생두 자동 불러오기 ---------- */
+  function libAll() { return load('lib', []); }
+  function libGet(id) { var L = libAll(); for (var i = 0; i < L.length; i++) if (L[i].id === id) return L[i]; return null; }
+  function libSave(L) {                                        // 저장 공간이 모자라면 오래된 것부터 지움
+    for (var tries = 0; tries < 50; tries++) { try { LS.setItem('m1.lib', JSON.stringify(L)); return true; } catch (e) { if (L.length <= 1) return false; L.shift(); } }
+    return false;
+  }
+  function libPut(item) {
+    var L = libAll(), i; for (i = 0; i < L.length; i++) if (L[i].id === item.id) break;
+    if (i < L.length) L[i] = item; else L.push(item);
+    libSave(L); fillBeanList(); fillLibOptions();
+  }
+  function fcBTof(src) { return src.ev && src.ev.fc !== null && src.ev.fc !== undefined && src.bt[src.ev.fc] !== null ? src.bt[src.ev.fc] : null; }
+  function libFromCsv(csv, fname, extra) {
+    var src = parseLogCsv(csv, fname || 'CSV'); if (src.bt.filter(function (x) { return x !== null; }).length < 20) return null;   // 10초 간격 옛 기록도 받음
+    var it = { id: (extra && extra.id) || ('c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), name: src.name, green: src.green || '', size: src.size, fcBT: fcBTof(src), fc: src.ev.fc, rating: (extra && extra.rating) || 0, date: (extra && extra.date) || src.name.slice(0, 6), csv: csv };
+    return it;
+  }
+  function saveRunToLib() {                                     // 끝난 배치를 보관함에(용량·별점을 고치면 같은 항목을 갱신)
+    if (!engine || engine.lastSec < 60 || source === 'file') return;
+    if (!engine.libId) engine.libId = 'r' + Date.now().toString(36);
+    var it = libFromCsv(csvText(), settings.name || engine.named || defName(), { id: engine.libId, rating: engine.rating || 0, date: today() });
+    if (it) { it.green = settings.green || it.green; libPut(it); }
+  }
+  function beanOf(name) { return (load('beans', {}))[name] || null; }
+  function fillBeanList() {
+    var dl = $('bean-list'); if (!dl) return; var seen = {}, html = '';
+    libAll().concat(Object.keys(load('beans', {})).map(function (k) { return { green: k }; })).forEach(function (x) { if (x.green && !seen[x.green]) { seen[x.green] = 1; html += '<option value="' + x.green.replace(/"/g, '&quot;') + '">'; } });
+    dl.innerHTML = html;
+  }
+  function fillLibOptions() {
+    var sel = $('bg-sel'); if (!sel) return; var grp = $('lib-grp');
+    if (!grp) { grp = document.createElement('optgroup'); grp.id = 'lib-grp'; grp.label = '내 배치'; sel.appendChild(grp); }
+    var L = libAll().slice().reverse(), cur = settings.bg; grp.innerHTML = '';
+    L.forEach(function (x) { var o = document.createElement('option'); o.value = 'lib:' + x.id; o.textContent = x.name + (x.green ? ' · ' + x.green : '') + (x.rating ? ' · ★' + x.rating : ''); grp.appendChild(o); });
+    if (cur) sel.value = cur;
+  }
+  function onBeanChosen() {                                     // 같은 생두를 고르면: 평균 팝 온도, 가장 좋은(없으면 최근) 배치를 기준으로, 생두 정보
+    var name = $('set-green').value.trim(); settings.green = name; if (!name) return;   // 칸 값을 직접(설정 저장보다 먼저 불릴 수 있음)
+    var mine = libAll().filter(function (x) { return x.green === name; }), msg = [];
+    var fcs = mine.map(function (x) { return x.fcBT; }).filter(function (x) { return x !== null && x !== undefined; });
+    if (fcs.length) { var m = Math.round(fcs.reduce(function (p, q) { return p + q; }, 0) / fcs.length); settings.fcTemp = m; $('set-fcTemp').value = m; msg.push('팝 평균 ' + m + '℃ (' + fcs.length + '배치)'); }
+    if (mine.length) {
+      var best = mine.slice().sort(function (p, q) { return (q.rating || 0) - (p.rating || 0) || (p.id < q.id ? 1 : -1); })[0];
+      settings.bg = 'lib:' + best.id; settings.bgOn = true; $('bg-sel').value = settings.bg; refreshBg(); renderBgBtn();
+      msg.push('기준 배치 ' + best.name + (best.rating ? ' ★' + best.rating : ''));
+    }
+    var b = beanOf(name); ['origin', 'variety', 'process', 'alt', 'moist', 'dens'].forEach(function (k) { $('bean-' + k).value = b && b[k] !== undefined ? b[k] : ''; });
+    save('settings', settings);
+    toast(mine.length ? name + ': ' + msg.join(' · ') : name + ': 처음 볶는 생두입니다');
+  }
+  function beanNote() {                                         // CSV 메모에 넣을 생두 정보
+    var b = beanOf(settings.green); if (!b) return '';
+    var lab = { origin: '원산지', variety: '품종', process: '가공', alt: '고도', moist: '수분', dens: '밀도' }, unit = { alt: 'm', moist: '%', dens: 'g/L' }, out = [];
+    Object.keys(lab).forEach(function (k) { if (b[k] !== undefined && b[k] !== '') out.push(lab[k] + ' ' + b[k] + (unit[k] || '')); });
+    return out.join(' · ');
+  }
+
+  /* ---------- 재현 코파일럿: 기준(배경) 배치의 화력 변경을 '시각'이 아니라 '그때의 BT'에 묶어 알림 ---------- */
+  var G = null;                                               // 이 기록의 진행 상태
+  function guideSteps() {                                     // [{bt: 기준 BT, p: 화력, atTP: TP 전 변경이면 true, t: 기준 시각}]
+    if (!BG || !BG.power || !BG.power.length) return [];
+    var tp = BG.ev && BG.ev.tp !== null && BG.ev.tp !== undefined ? BG.ev.tp : null, out = [];
+    BG.power.forEach(function (q, i) {
+      if (i === 0 || q[0] <= 1) return;                          // 시작 화력은 설정의 시작 화력으로
+      if (tp !== null && q[0] <= tp + 15) out.push({ atTP: true, p: q[1], t: q[0] });
+      else { var b = BG.bt[q[0]]; if (b !== null && b !== undefined) out.push({ bt: Math.round(b), p: q[1], t: q[0] }); }
+    });
+    return out;
+  }
+  function bgStartPower() { return settings.guide && BG && settings.bgOn && BG.power && BG.power.length ? BG.power[0][1] : null; }
+  function bgTimeAtBT(b) { var tp = (BG.ev && BG.ev.tp) || 30; for (var k = tp + 5; k < BG.bt.length; k++) if (BG.bt[k] !== null && BG.bt[k] >= b) return k; return null; }
+  var banner = null;
+  function showBanner(text, p, strong) { banner = { p: p, until: performance.now() + 20000 }; var b = $('guide-banner'); b.innerHTML = text; b.className = strong ? 'on strong' : 'on'; if (strong) beep(2); }
+  function updBanner() { var b = $('guide-banner'); if (!banner) { b.className = ''; return; } var cur = engine && engine.power.length ? engine.power[engine.power.length - 1].p : null; if (cur === banner.p || performance.now() > banner.until || !engine || engine.mode !== 'run') { banner = null; b.className = ''; } }
+  function guideStep() {
+    if (!settings.guide || !BG || !settings.bgOn || !engine || engine.mode !== 'run') return;
+    var E = engine, s = E.lastSec;
+    if (!G || G.eng !== E) { G = { eng: E, steps: guideSteps(), pre: {}, done: {} }; var p0 = bgStartPower(), c0 = E.power.length ? E.power[0].p : null; if (p0 !== null && c0 !== p0) { beep(2); showBanner('기준 배치는 화력 <b>' + p0 + '</b>으로 시작 — 지금 ' + c0, p0, true); } }   // 기록이 시작되자마자
+    if (E.events.tp === null || s < 0) return;
+    var b = E.bt(s); if (b === null) return;
+    var curP = E.power.length ? E.power[E.power.length - 1].p : null;
+    for (var i = 0; i < G.steps.length; i++) {
+      var st = G.steps[i]; if (G.done[i]) continue;
+      if (st.atTP) { G.done[i] = 1; if (curP !== st.p) showBanner('지금 화력 <b>' + st.p + '</b> — 기준 배치는 TP에서 바꿈', st.p, true); break; }
+      if (b >= st.bt) { G.done[i] = 1; if (curP !== st.p) showBanner('지금 화력 <b>' + st.p + '</b> — 기준 배치는 ' + st.bt + '℃에서 바꿈', st.p, true); continue; }
+      if (b >= st.bt - 3 && !G.pre[i]) { G.pre[i] = 1; if (curP !== st.p) showBanner('곧 ' + st.bt + '℃ — 화력 <b>' + st.p + '</b> 준비 (지금 ' + Math.round(b) + '℃)', st.p, false); }
+      break;                                                   // 다음 단계는 하나씩
+    }
+  }
+  function guideLine() {                                      // 같은 BT 기준으로 기준 배치와 비교
+    if (!settings.guide || !BG || !settings.bgOn || !engine || engine.mode !== 'run' || engine.events.tp === null) return '';
+    var E = engine, s = E.lastSec, b = E.bt(s); if (b === null || b < 110) return '';
+    var k = bgTimeAtBT(b); if (k === null) return '';
+    var dt = s - k, r = E.ror(s), rb = BG.ror[k], bits = [];
+    bits.push(Math.abs(dt) < 3 ? '기준과 같은 속도' : '기준보다 <b>' + Math.abs(dt) + '초 ' + (dt < 0 ? '빠름' : '느림') + '</b>');
+    if (r !== null && rb !== null && rb !== undefined) { var dr = r - rb; bits.push('RoR ' + (dr >= 0 ? '+' : '') + dr.toFixed(1)); }
+    var steps = G && G.eng === E ? G.steps.filter(function (x, i) { return !G.done[i] && !x.atTP; }) : guideSteps().filter(function (x) { return !x.atTP && x.bt > b; });
+    if (steps.length) bits.push('다음: <b>' + steps[0].bt + '℃에서 ' + steps[0].p + '</b>');
+    if (BG.ev && BG.ev.fc) bits.push('기준 팝 ' + M1Engine.fmt(BG.ev.fc) + ' → 이 속도면 ' + M1Engine.fmt(BG.ev.fc + dt));
+    return bits.join(' · ');
+  }
+
   /* ---------- 기록 화면 ---------- */
   var chart = $('chart'), cctx = chart.getContext('2d');
   function resizeChart() { var dpr = window.devicePixelRatio || 1, w = chart.clientWidth, h = chart.clientHeight; chart.width = w * dpr; chart.height = h * dpr; cctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
@@ -1340,7 +1460,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     engine = new M1Engine({ T: TEMPL, fcTemp: +settings.fcTemp || 183, startPower: +settings.startPower || 50, rorWin: settings.rorWin === 'fast' ? 'fast' : (+settings.rorWin || 30), marks: [140, 150, 159, 173] });
     alertShown = 0; renderPower(); if ($('out-g')) { $('out-g').value = ''; $('loss').textContent = ''; }
   }
-  function setPower(p) { if (!engine) return; engine.setPower(p); renderPower(); }
+  function setPower(p) { if (!engine) return; engine.setPower(p); renderPower(); updBanner(); }
   function renderPower() {
     var cur = engine ? engine.powerAt(engine.now()) : +settings.startPower;
     if (engine && engine.mode === 'run') cur = engine.power[engine.power.length - 1].p;
@@ -1361,7 +1481,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function render() {
     if (!engine) return;
     var E = engine, s = E.lastSec, st = $('status');
-    if (E.mode === 'wait') { var nb = E.raw.length ? E.raw[E.raw.length - 1].bt : null; st.textContent = E.charge !== null ? (E.manual ? '수동 시작 — 타이머 초에 맞추는 중 (몇 초)' : '투입 감지 — 진짜인지 확인 중 (약 8초)') : '대기 · 패널 타이머를 켜거나 투입하면 자동 시작' + (nb !== null ? ' · BT ' + nb + '℃' : ''); st.className = 'wait'; }
+    if (E.mode === 'wait') { var nb = E.raw.length ? E.raw[E.raw.length - 1].bt : null; st.textContent = E.charge !== null ? (E.manual ? '수동 시작 — 타이머 초에 맞추는 중 (몇 초)' : '투입 감지 — 진짜인지 확인 중 (약 8초)') : '대기 · 패널 타이머를 켜거나 투입하면 자동 시작' + (nb !== null ? ' · BT ' + nb + '℃' : '') + (bgStartPower() !== null ? ' · 기준 배치 시작 화력 ' + bgStartPower() : ''); st.className = 'wait'; }
     else if (E.mode === 'run') { st.textContent = '● 기록 중 ' + M1Engine.fmt(E.now()); st.className = 'run'; }
     else { st.textContent = '종료 (' + E.endReason + ') · ' + M1Engine.fmt(s); st.className = 'done'; }
     var last = E.raw.length ? E.raw[E.raw.length - 1] : {};
@@ -1374,6 +1494,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     $('fps').textContent = (recOn() ? '● 녹화 · ' : '') + fps.toFixed(1) + '장/초' + (trackInfo ? ' · ' + trackInfo : ''); $('rw').textContent = E.cfg.rorWin === 'fast' ? '빠름' : (E.cfg.rorWin || 30) + '초';
     var curP = E.power.length ? E.power[E.power.length - 1].p : 50, ph = E.predict(0), pc = curP - 10 >= 20 ? E.predict(-10) : null, tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + 190) : '—';
     $('p-hold').innerHTML = ph ? '30초 <b>' + fix(ph.r30) + '</b> · 60초 <b>' + fix(ph.r60) + '</b> · 팝 <b>' + (ph.passed ? '온도 지남' : ph.fc ? M1Engine.fmt(ph.fc) : '—') + '</b>' : '<span class="mute">예측은 1:30 이후, 1차 팝 전까지</span>';
+    var gl = guideLine(); $('p-guide').innerHTML = gl; $('p-guide-row').style.display = gl ? '' : 'none';
     $('p-cut').innerHTML = curP - 10 < 20 && ph ? '<span class="mute">최저 화력이라 더 내릴 수 없음</span>' : pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.passed ? '온도 지남' : pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
     $('btn-start-now').style.display = E.mode === 'wait' ? '' : 'none'; $('btn-settings').style.display = E.mode === 'run' ? 'none' : '';
     var tlab = $('p-target-k');
@@ -1435,13 +1556,24 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   }
 
   function today() { var n = new Date(); return String(n.getFullYear()).slice(2) + ('0' + (n.getMonth() + 1)).slice(-2) + ('0' + n.getDate()).slice(-2); }
-  function defName() { var c = load('day', { d: '', n: 0 }), k = c.d === today() ? c.n + 1 : 1; return today() + '_' + k; }   // 이름을 비워 두면 그날 몇 번째 배치인지
-  function usedName() { var c = load('day', { d: '', n: 0 }); save('day', { d: today(), n: c.d === today() ? c.n + 1 : 1 }); }
+  function defName() {                                         // 이름을 비워 두면: 날짜_생두(같은 날 같은 생두면 _2…), 생두도 없으면 날짜_번호
+    var c = load('day', { d: '', n: 0, names: [] }), used = c.d === today() ? (c.names || []) : [], k = c.d === today() ? c.n + 1 : 1;
+    var g = (settings.green || '').trim(); if (!g) return today() + '_' + k;
+    var base = today() + '_' + g, nm = base, i = 2; while (used.indexOf(nm) >= 0) nm = base + '_' + (i++);
+    return nm;
+  }
+  function batchNo() { var c = load('day', { d: '', n: 0 }); return c.d === today() ? c.n + 1 : 1; }
+  function usedName(nm) { var c = load('day', { d: '', n: 0, names: [] }), same = c.d === today(); save('day', { d: today(), n: same ? c.n + 1 : 1, names: (same ? (c.names || []) : []).concat(nm ? [nm] : []) }); }
   function finish() {
-    if (!settings.name && engine && !engine.named) { engine.named = defName(); usedName(); }
+    if (engine && !engine.batchNo) engine.batchNo = batchNo();
+    if (engine && engine.intent === undefined) engine.intent = settings.intent || '';
+    if (!settings.name && engine && !engine.named) { engine.named = defName(); usedName(engine.named); }
+    else if (engine && !engine.counted) { usedName(''); }
+    if (engine) engine.counted = true;
+    if (settings.intent) { settings.intent = ''; save('settings', settings); $('set-intent').value = ''; }   // 의도는 배치마다 새로
     beep(3); recStop(); render(); if (source === 'file') video.pause(); $('btn-drop').textContent = '배출'; clearRun();
     $('done-w').style.display = ''; $('in-g').value = engine.inG || settings.size || ''; $('out-g').value = engine.outG || ''; showLoss();
-    save('lastCsv', csvText()); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
+    $('rating').value = engine.rating || ''; save('lastCsv', csvText()); saveRunToLib(); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
   }
   function csvText() {
     if (!engine) return load('lastCsv', '');
@@ -1450,12 +1582,18 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     if (ev.my !== null && ev.my !== undefined) bits.push('마이야르 ' + f(ev.my));
     if (inG && outG) bits.push('투입 ' + inG + 'g → 배출 ' + outG + 'g (감량 ' + ((inG - outG) / inG * 100).toFixed(1) + '%)');
     if (rec && rec.engine === E && E.t0 !== null) { var a0 = (E.t0Start !== undefined ? E.t0Start : E.t0) - rec.startV, a1 = E.t0 - rec.startV; bits.push('녹화 영상 ' + a0.toFixed(2) + '초 = 기록 0초' + (Math.abs(a1 - a0) >= 0.2 ? ' (끝날 때 ' + a1.toFixed(2) + '초)' : '')); }
-    bits.push('M1 실시간 앱 v2.6로 기록' + (E.startedBy ? ' · 시작: ' + ({ timer: '패널 타이머', bt: 'BT 급락', manual: '수동' })[E.startedBy] : '') + (E.reanchors ? ' · 시각 자동 보정' : ''));
-    return E.csv({ name: settings.name || E.named || defName(), green: settings.green, size: inG, out: outG, charge: 170, air: 80, drum: 100, set: 220, notes: bits.join(' · ') });
+    var bn = beanNote(); if (bn) bits.push(bn);
+    if (E.rating) bits.push('별점 ' + E.rating);
+    bits.push('M1 실시간 앱 v2.8로 기록' + (E.startedBy ? ' · 시작: ' + ({ timer: '패널 타이머', bt: 'BT 급락', manual: '수동' })[E.startedBy] : '') + (E.reanchors ? ' · 시각 자동 보정' : ''));
+    var B = beanOf(settings.green) || {};
+    return E.csv({ name: settings.name || E.named || defName(), green: settings.green, size: inG, out: outG, charge: 170, air: 80, drum: 100, set: 220, notes: bits.join(' · '),
+      batchno: E.batchNo || batchNo(), intent: E.intent !== undefined ? E.intent : (settings.intent || ''), rating: E.rating || '',
+      origin: B.origin || '', variety: B.variety || '', process: B.process || '', alt: B.alt || '', moist: B.moist || '', dens: B.dens || '' });
   }
+  $('rating').addEventListener('change', function () { if (!engine) return; engine.rating = +$('rating').value || 0; save('lastCsv', csvText()); saveRunToLib(); });
   function showLoss() { var i = +$('in-g').value, o = +$('out-g').value; $('loss').textContent = i && o ? '감량 ' + ((i - o) / i * 100).toFixed(1) + '%' : ''; }
   ['in-g', 'out-g'].forEach(function (id) {
-    $(id).addEventListener('input', function () { if (!engine) return; engine.inG = +$('in-g').value || null; engine.outG = +$('out-g').value || null; showLoss(); save('lastCsv', csvText()); });
+    $(id).addEventListener('input', function () { if (!engine) return; engine.inG = +$('in-g').value || null; engine.outG = +$('out-g').value || null; showLoss(); save('lastCsv', csvText()); saveRunToLib(); });
   });
   function downloadCsv() {
     var txt = '\ufeff' + csvText(), name = (settings.name || (engine && engine.named) || defName()).replace(/[\\/:*?"<>|\s]+/g, '_') + '.csv';
@@ -1505,6 +1643,39 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var a2 = document.createElement('a'); a2.href = URL.createObjectURL(rec.blob); a2.download = name; document.body.appendChild(a2); a2.click(); setTimeout(function () { URL.revokeObjectURL(a2.href); a2.remove(); }, 4000); rec.saved = true;
   }
   bind('btn-rec-save', recSave);
+  $('set-green').addEventListener('change', onBeanChosen);
+  $('set-intent').value = settings.intent || ''; $('set-intent').addEventListener('input', function () { settings.intent = $('set-intent').value; save('settings', settings); });
+  ['origin', 'variety', 'process', 'alt', 'moist', 'dens'].forEach(function (k) {
+    $('bean-' + k).addEventListener('change', function () {
+      if (!settings.green) { toast('먼저 생두 이름을 적어 주세요'); return; }
+      var B = load('beans', {}), b = B[settings.green] || {}; b[k] = $('bean-' + k).value.trim(); B[settings.green] = b; save('beans', B); fillBeanList();
+    });
+  });
+  $('lib-files').addEventListener('change', function (e) {
+    var fs = Array.prototype.slice.call(e.target.files || []), n = 0, bad = 0, left = fs.length;
+    if (!left) return;
+    fs.forEach(function (file) {
+      var rd = new FileReader();
+      rd.onload = function () {
+        var txt = String(rd.result);
+        if (/\.json$/i.test(file.name)) {                     // 로거가 드라이브에 써 준 보관함 파일
+          try {
+            var J = JSON.parse(txt), B = load('beans', {}), L = libAll(), byId = {};
+            L.forEach(function (x, i) { byId[x.id] = i; });
+            (J.batches || []).forEach(function (b) {
+              var it = libFromCsv(b.csv, b.name, { id: 'L' + b.id, rating: b.rating || 0, date: (b.name || '').slice(0, 6) }); if (!it) { bad++; return; }
+              it.green = b.green || it.green; if (byId[it.id] !== undefined) L[byId[it.id]] = it; else L.push(it); n++;
+              if (b.green) { var s0 = B[b.green] || {}; ['origin', 'variety', 'process', 'alt', 'moist', 'dens'].forEach(function (k) { if (b[k] && !s0[k]) s0[k] = b[k]; }); B[b.green] = s0; }
+            });
+            libSave(L); save('beans', B); fillBeanList(); fillLibOptions();
+          } catch (e) { bad++; }
+        } else { var it = libFromCsv(txt, file.name.replace(/\.csv$/i, '')); if (it) { libPut(it); n++; } else bad++; }
+        if (--left === 0) toast('보관함에 ' + n + '개 넣었습니다' + (bad ? ' (' + bad + '개는 읽지 못함)' : ''));
+      };
+      rd.readAsText(file);
+    });
+  });
+
 
   /* ---------- 기록 중 자동 저장 · 새로고침 복구 ---------- */
   var lastSave = 0;
@@ -1596,6 +1767,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (b) { b.addEventListener('click', function () { speed = +b.getAttribute('data-s'); video.playbackRate = speed; Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (x) { x.className = 'spd' + (x === b ? ' on' : ''); }); }); });
   ['fcTemp', 'startPower', 'name', 'green', 'size', 'rorWin'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = k === 'rorWin' ? (el.value === 'fast' ? 'fast' : +el.value) : (el.type === 'number' ? +el.value : el.value); save('settings', settings); if (k === 'rorWin') { if (engine) engine.cfg.rorWin = settings.rorWin; refreshBg(); } }); });
   $('set-rec').checked = !!settings.rec; $('set-rec').addEventListener('change', function () { settings.rec = $('set-rec').checked; save('settings', settings); });
+  $('set-guide').checked = !!settings.guide; $('set-guide').addEventListener('change', function () { settings.guide = $('set-guide').checked; save('settings', settings); });
   $('set-adapt').checked = !!settings.adapt; $('set-adapt').addEventListener('change', function () { settings.adapt = $('set-adapt').checked; save('settings', settings); });
   $('set-bgAlign').value = settings.bgAlign; $('set-bgAlign').addEventListener('change', function () { settings.bgAlign = $('set-bgAlign').value; save('settings', settings); });
   if (!settings.res) settings.res = '1080'; $('set-res').value = settings.res; $('set-res').addEventListener('change', function () { settings.res = $('set-res').value; save('settings', settings);
@@ -1607,6 +1779,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-last', function () { var ta = $('csv-box-home'); ta.value = load('lastCsv', ''); ta.style.display = ''; ta.select(); });
 
   (function () {
+    fillBeanList(); setTimeout(fillLibOptions, 0);
     var sel = $('bg-sel'); PRESETS.forEach(function (p, i) { var o = document.createElement('option'); o.value = String(i); o.textContent = p.name; sel.appendChild(o); });
     var f = load('bgFile', null); if (f) { var o2 = document.createElement('option'); o2.value = 'file'; o2.textContent = '불러온 파일: ' + f.name; o2.id = 'bg-file-opt'; sel.appendChild(o2); }
     if (settings.bg === undefined) { settings.bg = '0'; settings.bgOn = true; save('settings', settings); }
