@@ -69,13 +69,20 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <label>배치 이름 <input id="set-name" style="width:200px"></label>
     <label>생두 <input id="set-green" style="width:240px"></label><br>
     <label><input id="set-alerts" type="checkbox" style="width:auto"> 140·150·159·173℃ 알림</label>
+    <label><input id="set-track" type="checkbox" style="width:auto"> 기록 중 칸 자동 따라가기</label>
+  </div>
+  <div class="card">
+    <b>배경 곡선</b> <span class="mute" style="font-size:13px">— 지난 배치를 실시간 화면과 같은 방식으로 다시 그려 흐리게 깝니다</span><br>
+    <label>기준 배치 <select id="bg-sel" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="">없음</option></select></label>
+    <label><span class="mute">로그 CSV 불러오기:</span> <input id="bg-file" type="file" accept=".csv,text/csv" style="width:220px"></label>
+    <div class="mute" style="font-size:13px">지금: <span id="bg-label">없음</span></div>
   </div>
   <button id="btn-last" style="display:none">지난 기록 CSV 보기</button>
   <textarea id="csv-box-home" style="display:none" readonly></textarea>
 </div>
 
 <div id="scr-align" class="scr" style="display:none">
-  <div id="align-top"><div id="align-status"></div><div class="mute" style="font-size:13px">칸 안을 끌어 옮기고, 오른쪽 아래 네모를 끌어 크기를 바꿉니다. 칸은 숫자를 감싼 <b>검은 바탕 안쪽</b>에 두세요.</div></div>
+  <div id="align-top"><div id="align-status"></div><div class="mute" style="font-size:13px"><b>자동 맞추기</b>를 누르고 BT 숫자를 한 번 탭하면 네 칸을 알아서 맞춥니다. 손으로 할 땐 칸 안을 끌어 옮기고 오른쪽 아래 네모로 크기를 바꿉니다.</div></div>
   <div id="align-bot">
     <div id="learn" style="display:none">
       지금 패널에 보이는 숫자를 입력하면 그 모양을 익힙니다 (일부만 입력해도 됨)<br>
@@ -85,6 +92,8 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
       <button id="btn-learn-go">익히기</button>
     </div>
     <label style="margin-left:6px"><input id="ghost-on" type="checkbox" checked style="width:auto"> 지난 구도 겹쳐 보기</label>
+    <button id="btn-auto">자동 맞추기 (BT 탭)</button>
+    <button id="btn-refind">다시 찾기</button>
     <button id="btn-default">기본 위치</button>
     <button id="btn-learn">숫자 익히기</button>
     <button id="btn-diag">진단 사진</button>
@@ -118,7 +127,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <span>화력</span>
     <button class="pw" data-p="80">80</button><button class="pw" data-p="70">70</button><button class="pw" data-p="60">60</button><button class="pw" data-p="50">50</button><button class="pw" data-p="40">40</button><button class="pw" data-p="30">30</button><button class="pw" data-p="20">20</button>
     <button id="btn-fc" class="big">1차 팝</button><button id="btn-drop" class="big">배출</button>
-    <button id="btn-stop">종료</button><button id="btn-start-now">지금 투입</button><button id="btn-realign">칸 맞추기</button><button id="btn-diag2">진단</button>
+    <button id="btn-stop">종료</button><button id="btn-start-now">지금 투입</button><button id="btn-bg" class="spd">배경</button><button id="btn-realign">칸 맞추기</button><button id="btn-diag2">진단</button>
     <span id="spd-row" style="display:none"><button class="spd on" data-s="1">1×</button><button class="spd" data-s="2">2×</button><button class="spd" data-s="4">4×</button></span>
   </div>
 </div>
@@ -308,6 +317,223 @@ var M1 = (function () {
     return o;
   }
 
+
+  /* 검은 바탕 칸 찾기: (sx,sy) 근처의 어두운 픽셀에서 시작해 어두운 영역을 채워 나가 그 경계를 돌려준다.
+     숫자(밝음)는 구멍으로 비켜 가고 파란 패널(밝음)에서 멈춘다. lim: 탐색 반경(px) */
+  function findDarkBoxTh(img, sx, sy, lim, thFix) {
+    var W = img.width, H = img.height, ch = img.ch || 4, d = img.data;
+    var x0 = Math.max(0, Math.floor(sx - lim)), y0 = Math.max(0, Math.floor(sy - lim)), x1 = Math.min(W, Math.ceil(sx + lim)), y1 = Math.min(H, Math.ceil(sy + lim));
+    var w = x1 - x0, h = y1 - y0, v = new Uint8Array(w * h);
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) { var i = ((y0 + y) * W + x0 + x) * ch, r = d[i], g = d[i + 1], b = d[i + 2]; v[y * w + x] = r > g ? (r > b ? r : b) : (g > b ? g : b); }
+    var th = thFix;
+    var cx = Math.round(sx - x0), cy = Math.round(sy - y0), cands = [];
+    for (var yy = Math.max(0, cy - 14); yy < Math.min(h, cy + 15); yy++) for (var xx = Math.max(0, cx - 30); xx < Math.min(w, cx + 31); xx++)
+      if (v[yy * w + xx] <= th) cands.push([(xx - cx) * (xx - cx) + (yy - cy) * (yy - cy), yy * w + xx]);
+    cands.sort(function (a, b) { return a[0] - b[0]; });
+    var seen = new Uint8Array(w * h), tries = 0;
+    for (var c = 0; c < cands.length && tries < 40; c++) {          // 숫자 속 구멍(작은 영역)이면 다음 어두운 점에서 다시
+      var seed = cands[c][1]; if (seen[seed]) continue; tries++;
+      var st = [seed], bx0 = w, by0 = h, bx1 = -1, by1 = -1, n = 0, edge = false; seen[seed] = 1;
+      while (st.length) {
+        var p = st.pop(), px = p % w, py = (p / w) | 0; n++;
+        if (px < bx0) bx0 = px; if (px > bx1) bx1 = px; if (py < by0) by0 = py; if (py > by1) by1 = py;
+        if (px === 0 || py === 0 || px === w - 1 || py === h - 1) edge = true;
+        if (px > 0 && !seen[p - 1] && v[p - 1] <= th) { seen[p - 1] = 1; st.push(p - 1); }
+        if (px < w - 1 && !seen[p + 1] && v[p + 1] <= th) { seen[p + 1] = 1; st.push(p + 1); }
+        if (py > 0 && !seen[p - w] && v[p - w] <= th) { seen[p - w] = 1; st.push(p - w); }
+        if (py < h - 1 && !seen[p + w] && v[p + w] <= th) { seen[p + w] = 1; st.push(p + w); }
+      }
+      var bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
+      if (edge) return null;                                   // 탐색 창 밖으로 샘 = 칸이 아님
+      if (n >= 150 && bw >= 20 && bh >= 12 && bx0 + x0 <= sx + 2 && bx1 + x0 >= sx - 2 && by0 + y0 <= sy + 2 && by1 + y0 >= sy - 2) {
+        // 숫자에 끊긴 같은 칸의 조각(같은 높이 띠, 옆에 붙은 어두운 영역)을 합친다
+        var U = [bx0, by0, bx1, by1], tot = n, grow = true, rounds = 0;
+        while (grow && rounds++ < 6) {
+          grow = false;
+          for (var yy2 = U[1]; yy2 <= U[3]; yy2++) for (var xx2 = Math.max(0, U[0] - Math.round(bh * 0.6)); xx2 <= Math.min(w - 1, U[2] + Math.round(bh * 0.6)); xx2++) {
+            var q0 = yy2 * w + xx2; if (seen[q0] || v[q0] > th) continue;
+            var st2 = [q0], a0 = w, b0 = h, a1 = -1, b1 = -1, m = 0, e2 = false; seen[q0] = 1;
+            while (st2.length) {
+              var p2 = st2.pop(), qx = p2 % w, qy = (p2 / w) | 0; m++;
+              if (qx < a0) a0 = qx; if (qx > a1) a1 = qx; if (qy < b0) b0 = qy; if (qy > b1) b1 = qy;
+              if (qx === 0 || qy === 0 || qx === w - 1 || qy === h - 1) e2 = true;
+              if (qx > 0 && !seen[p2 - 1] && v[p2 - 1] <= th) { seen[p2 - 1] = 1; st2.push(p2 - 1); }
+              if (qx < w - 1 && !seen[p2 + 1] && v[p2 + 1] <= th) { seen[p2 + 1] = 1; st2.push(p2 + 1); }
+              if (qy > 0 && !seen[p2 - w] && v[p2 - w] <= th) { seen[p2 - w] = 1; st2.push(p2 - w); }
+              if (qy < h - 1 && !seen[p2 + w] && v[p2 + w] <= th) { seen[p2 + w] = 1; st2.push(p2 + w); }
+            }
+            if (!e2 && m >= 20 && b0 >= U[1] - 3 && b1 <= U[3] + 3 && (b1 - b0 + 1) >= 0.5 * (U[3] - U[1] + 1)) {
+              if (a0 < U[0]) { U[0] = a0; grow = true; } if (a1 > U[2]) { U[2] = a1; grow = true; } tot += m;
+            }
+          }
+        }
+        return { x0: x0 + U[0], y0: y0 + U[1], x1: x0 + U[2] + 1, y1: y0 + U[3] + 1, fill: tot / ((U[2] - U[0] + 1) * (U[3] - U[1] + 1)) };
+      }
+    }
+    return null;
+
+  }
+
+
+  function findDarkBox(img, sx, sy, lim) {                 // 어둠 기준을 바꿔 가며, 새지 않는 가장 큰 칸
+    var best = null;
+    [100, 115, 130, 145, 160].forEach(function (th) {
+      var r = findDarkBoxTh(img, sx, sy, lim, th); if (!r) return;
+      var area = (r.x1 - r.x0) * (r.y1 - r.y0), asp = (r.x1 - r.x0) / (r.y1 - r.y0);
+      if (asp < 0.8 || asp > 6) return;
+      if (!best || area > best.area * 1.05) { r.area = area; r.th = th; best = r; }
+    });
+    return best;
+  }
+
+
+
+  /* 숫자 묶음 찾기: 탭 근처의 밝은 글자들(키가 비슷하고 한 줄로 늘어선)의 경계. 파란 패널처럼 큰 밝은 영역은 제외 */
+  function digitCluster(img, sx, sy, lim) {
+    var W = img.width, H = img.height, ch = img.ch || 4, d = img.data;
+    var x0 = Math.max(0, Math.floor(sx - lim)), y0 = Math.max(0, Math.floor(sy - lim * 0.6)), x1 = Math.min(W, Math.ceil(sx + lim)), y1 = Math.min(H, Math.ceil(sy + lim * 0.6));
+    var w = x1 - x0, h = y1 - y0, v = new Uint8Array(w * h), hist = [];
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) { var i = ((y0 + y) * W + x0 + x) * ch, r = d[i], g = d[i + 1], b = d[i + 2]; v[y * w + x] = r > g ? (r > b ? r : b) : (g > b ? g : b); }
+    var best = null;
+    [0, 1, 2].forEach(function (k) {
+      var th = [otsu(v), 170, 200][k], m = new Uint8Array(w * h); for (var q = 0; q < w * h; q++) m[q] = v[q] > th ? 1 : 0;
+      var comps = components(m, w, h).filter(function (c) { return c[4] >= 15 && c[3] >= 8 && c[0] > 0 && c[1] > 0 && c[0] + c[2] < w && c[1] + c[3] < h && c[3] < 0.9 * h && c[2] < 2.5 * c[3]; });
+      var cx = sx - x0, cy = sy - y0, seed = null, sd = 1e9;
+      comps.forEach(function (c) { var dx = Math.max(c[0] - cx, 0, cx - (c[0] + c[2])), dy = Math.max(c[1] - cy, 0, cy - (c[1] + c[3])), dd = dx * dx + dy * dy; if (dd < sd && dd < 30 * 30) { sd = dd; seed = c; } });
+      if (!seed) return;
+      var U = [seed[0], seed[1], seed[0] + seed[2], seed[1] + seed[3]], hs = seed[3], grew = true;
+      while (grew) {
+        grew = false;
+        comps.forEach(function (c) {
+          if (c[0] >= U[0] && c[0] + c[2] <= U[2] && c[1] >= U[1] && c[1] + c[3] <= U[3]) return;
+          var ccy = c[1] + c[3] / 2, ucy = (U[1] + U[3]) / 2, gap = Math.max(c[0] - U[2], U[0] - (c[0] + c[2]));
+          var small = c[3] < 0.6 * hs;                       // 쌍점·마이너스 같은 작은 조각은 가까울 때만
+          if (Math.abs(ccy - ucy) > 0.4 * hs || gap > (small ? 0.5 : 0.9) * hs || c[3] > 1.5 * hs) return;
+          if (!small && c[3] < 0.6 * hs) return;
+          U = [Math.min(U[0], c[0]), Math.min(U[1], c[1]), Math.max(U[2], c[0] + c[2]), Math.max(U[3], c[1] + c[3])]; grew = true;
+        });
+      }
+      var res = { x0: x0 + U[0], y0: y0 + U[1], x1: x0 + U[2], y1: y0 + U[3], h: hs };
+      if (!best || (res.x1 - res.x0) > (best.x1 - best.x0)) best = res;
+    });
+    return best;
+  }
+
+  /* 탭/추적용: 후보 칸들을 실제로 읽어 보고, 그 칸에 맞는 자릿수가 자신 있게 읽히는 가장 큰 칸을 고른다 */
+  function fitField(img, sx, sy, lim, field, T, theta) {
+    var cl = digitCluster(img, sx, sy, lim), cands = [];
+    [100, 115, 130, 145, 160].forEach(function (th) { var r = findDarkBoxTh(img, sx, sy, lim, th); if (r) cands.push([r.x0 + 2, r.y0 + 2, r.x1 - 2, r.y1 - 2]); });
+    if (cl) { var mx = Math.round(cl.h * 0.12), my = Math.round(cl.h * 0.15); cands.push([cl.x0 - mx, cl.y0 - my, cl.x1 + mx, cl.y1 + my]); }
+    var best = null;
+    cands.forEach(function (b) {
+      if (b[2] - b[0] < 12 || b[3] - b[1] < 8) return;
+      if (cl && (b[0] > cl.x0 + 1 || b[2] < cl.x1 - 1 || b[1] > cl.y0 + 1 || b[3] < cl.y1 - 1)) return;      // 숫자를 다 감싸지 못하면 탈락
+      if (cl && (b[2] - b[0]) > 2.2 * (cl.x1 - cl.x0) + cl.h) return;                                          // 옆 칸까지 삼키면 탈락
+      var ok = false, d = 999, want = 0;
+      if (field === 'timer') { var tr = readBox(img, b, field, T, theta); ok = !!tr && tr.d < 95; d = tr ? tr.d : 999; want = 1; }
+      else {
+        var x = readBox(img, b, field, T, theta), digits = x.s.replace('-', '').length;
+        ok = x.n > 0 && x.d < 95 && /^-?\d+$/.test(x.s) && (field === 'ror' ? digits >= 1 && digits <= 2 : digits >= 2 && digits <= 3);
+        want = field === 'ror' ? 1 : (digits === 3 ? 1 : 0); d = x.d;
+      }
+      if (!ok) return;
+      var area = (b[2] - b[0]) * (b[3] - b[1]), score = want * 1e6 + area;
+      if (!best || score > best.score) best = { box: b, area: area, d: d, score: score };
+    });
+    return best;
+  }
+
+
+  /* 자동 맞추기: BT 한 번 탭 → BT·ROR·타이머를 찾고, 그 셋으로 패널의 이동·크기·기울기를 계산해 AT를 끌어낸다.
+     ref: 기준 칸들(픽셀, 기준 화면), 반환: 현재 화면의 칸들(픽셀) 또는 null */
+  function center(b) { return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]; }
+  function fitAffine(src, dst) {                             // 점 대응 → 2x3 변환(최소제곱). 점이 적으면 닮음변환
+    var n = src.length; if (n < 2) return null;
+    if (n < 6) {                                             // 닮음변환: x' = a x - b y + tx, y' = b x + a y + ty
+      var A = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], B = [0, 0, 0, 0];
+      src.forEach(function (p, i) { var q = dst[i], r1 = [p[0], -p[1], 1, 0], r2 = [p[1], p[0], 0, 1];
+        for (var a = 0; a < 4; a++) { for (var b = 0; b < 4; b++) A[a][b] += r1[a] * r1[b] + r2[a] * r2[b]; B[a] += r1[a] * q[0] + r2[a] * q[1]; } });
+      var x = solve(A, B); if (!x) return null; return [x[0], -x[1], x[2], x[1], x[0], x[3]];
+    }
+    var M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bx = [0, 0, 0], by = [0, 0, 0];
+    src.forEach(function (p, i) { var r = [p[0], p[1], 1]; for (var a = 0; a < 3; a++) { for (var b = 0; b < 3; b++) M[a][b] += r[a] * r[b]; bx[a] += r[a] * dst[i][0]; by[a] += r[a] * dst[i][1]; } });
+    var X = solve(M, bx), Y = solve(M, by); if (!X || !Y) return null; return [X[0], X[1], X[2], Y[0], Y[1], Y[2]];
+  }
+  function solve(A, b) {                                     // 가우스 소거
+    var n = b.length, M = A.map(function (r, i) { return r.concat([b[i]]); });
+    for (var c = 0; c < n; c++) {
+      var p = c; for (var r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+      if (Math.abs(M[p][c]) < 1e-9) return null; var t = M[c]; M[c] = M[p]; M[p] = t;
+      for (r = 0; r < n; r++) if (r !== c) { var f = M[r][c] / M[c][c]; for (var k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+    }
+    return M.map(function (r, i) { return r[n] / r[i]; });
+  }
+  function applyAff(m, p) { return [m[0] * p[0] + m[1] * p[1] + m[2], m[3] * p[0] + m[4] * p[1] + m[5]]; }
+  function corners(b) { return [[b[0], b[1]], [b[2], b[1]], [b[0], b[3]], [b[2], b[3]]]; }
+  function mapBox(m, b) { var c = corners(b).map(function (p) { return applyAff(m, p); }); return [Math.min(c[0][0], c[2][0]), Math.min(c[0][1], c[1][1]), Math.max(c[1][0], c[3][0]), Math.max(c[2][1], c[3][1])]; }
+
+  function autoAlign(img, tx, ty, ref, T) {
+    var rb = ref.bt, rh = rb[3] - rb[1];
+    var bt = fitField(img, tx, ty, Math.max(60, rh * 2.5), 'bt', T.bt); if (!bt) return null;
+    var found = { bt: bt.box }, s0 = (bt.box[3] - bt.box[1]) / rh, bc = center(bt.box), rc = center(rb);
+    ['ror', 'timer'].forEach(function (k) {
+      var c = center(ref[k]), px = bc[0] + s0 * (c[0] - rc[0]), py = bc[1] + s0 * (c[1] - rc[1]);
+      var r = fitField(img, px, py, Math.max(50, s0 * (ref[k][3] - ref[k][1]) * 2.2), k, T[k]);
+      if (r) { var c2 = center(r.box); if (Math.abs(c2[0] - px) < s0 * rh * 1.2 && Math.abs(c2[1] - py) < s0 * rh * 0.8) found[k] = r.box; }
+    });
+    var ks = Object.keys(found), src = ks.map(function (k) { return center(ref[k]); }), dst = ks.map(function (k) { return center(found[k]); });
+    var m;
+    if (ks.length >= 2) m = fitAffine(src, dst);              // 중심 2~3개 → 닮음변환(이동·크기·회전)
+    if (!m) m = [s0, 0, bc[0] - s0 * rc[0], 0, s0, bc[1] - s0 * rc[1]];
+    var sc = Math.sqrt(Math.abs(m[0] * m[4] - m[1] * m[3])), theta = Math.atan2(m[3], m[0]);
+    if (ks.length >= 3) {                                    // 셋이면 닮음변환으로 다시(일반 변환은 기울기 추정이 흔들림)
+      var m2 = fitAffine(src.concat([[src[0][0] + 1, src[0][1]]]).slice(0, 3), dst.slice(0, 3)); }
+    var out = {};
+    Object.keys(ref).forEach(function (k) {
+      var c = applyAff(m, center(ref[k])), w = (ref[k][2] - ref[k][0]) * sc, h = (ref[k][3] - ref[k][1]) * sc;
+      out[k] = [c[0] - w / 2, c[1] - h / 2, c[0] + w / 2, c[1] + h / 2];
+    });
+    return { boxes: out, theta: theta, scale: sc, found: ks };
+  }
+
+  /* 따라가기: 지금 칸들 근처에서 BT·ROR·타이머를 다시 찾아 공통 이동량(중앙값)을 돌려준다 */
+  function trackShift(img, boxes, T, theta) {
+    var dx = [], dy = [];
+    ['bt', 'ror', 'timer'].forEach(function (k) {
+      var b = boxes[k], c = center(b), h = b[3] - b[1], r = fitField(img, c[0], c[1], Math.max(40, h * 1.8), k, T[k], theta); if (!r) return;
+      var c2 = center(r.box), w2 = r.box[2] - r.box[0], w1 = b[2] - b[0];
+      if (Math.abs(w2 - w1) > 0.35 * w1 || Math.abs((r.box[3] - r.box[1]) - h) > 0.35 * h) return;    // 크기가 너무 다르면 믿지 않음
+      dx.push(c2[0] - c[0]); dy.push(c2[1] - c[1]);
+    });
+    if (dx.length < 2) return null;
+    var med = function (a) { a = a.slice().sort(function (x, y) { return x - y; }); return a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2; };
+    return { dx: med(dx), dy: med(dy), n: dx.length };
+  }
+
+
+  /* 기울어진 칸을 반듯하게 펴서 잘라내기: box의 중심을 기준으로 theta(라디안)만큼 돌아간 사각형을 표본화 */
+  function rotCrop(img, box, theta) {
+    var W = img.width, H = img.height, ch = img.ch || 4, d = img.data;
+    var w = Math.max(4, Math.round(box[2] - box[0])), h = Math.max(4, Math.round(box[3] - box[1])), cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
+    var c = Math.cos(theta), s = Math.sin(theta), o = new Uint8ClampedArray(w * h * 4);
+    for (var v = 0; v < h; v++) for (var u = 0; u < w; u++) {
+      var du = u + 0.5 - w / 2, dv = v + 0.5 - h / 2, x = cx + du * c - dv * s - 0.5, y = cy + du * s + dv * c - 0.5;
+      var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, k = (v * w + u) * 4;
+      if (x0 < 0 || y0 < 0 || x0 + 1 >= W || y0 + 1 >= H) { o[k + 3] = 255; continue; }
+      for (var q = 0; q < 3; q++) {
+        var a = d[(y0 * W + x0) * ch + q], b = d[(y0 * W + x0 + 1) * ch + q], e = d[((y0 + 1) * W + x0) * ch + q], f = d[((y0 + 1) * W + x0 + 1) * ch + q];
+        o[k + q] = (a * (1 - fx) + b * fx) * (1 - fy) + (e * (1 - fx) + f * fx) * fy;
+      }
+      o[k + 3] = 255;
+    }
+    return { data: o, width: w, height: h, ch: 4 };
+  }
+  /* 칸 하나 읽기(기울기 보정 포함) */
+  function readBox(img, box, field, T, theta) {
+    if (theta && Math.abs(theta) > 0.005) { var sub = rotCrop(img, box, theta), b = [0, 0, sub.width, sub.height]; return field === 'timer' ? readTimer(sub, b, T) : readField(sub, b, field, T); }
+    return field === 'timer' ? readTimer(img, box, T) : readField(img, box, field, T);
+  }
+
   function classify(g, T) {
     var best = null, bd = 1e18;
     for (var k in T) {
@@ -339,7 +565,7 @@ var M1 = (function () {
     return { s: s, d: worst, n: gs.length };
   }
 
-  return { glyphs: glyphs, classify: classify, readField: readField, readTimer: readTimer, fingerprint: fingerprint, NW: NW, NH: NH };
+  return { glyphs: glyphs, classify: classify, readField: readField, readTimer: readTimer, fingerprint: fingerprint, findDarkBox: findDarkBox, fitField: fitField, autoAlign: autoAlign, trackShift: trackShift, rotCrop: rotCrop, readBox: readBox, NW: NW, NH: NH };
 })();
 if (typeof module !== 'undefined') module.exports = M1;
 </script>
@@ -364,13 +590,13 @@ var M1Engine = (function () {
   };
 
   /* 한 프레임 처리. v: 초(카메라=현재 시각, 재생=영상 시각), img: {data,width,height,ch}, boxes: 이 img 기준 좌표 */
-  P.feed = function (v, img, boxes) {
+  P.feed = function (v, img, boxes, theta) {
     var T = this.cfg.T, r = { v: v }, self = this; this.vNow = v;
     ['bt', 'at', 'ror'].forEach(function (f) {
-      var x = M1.readField(img, boxes[f], f, T[f]), ok = x.n > 0 && x.d < (f === 'ror' ? 90 : 80) && /^-?\d+$/.test(x.s);
+      var x = M1.readBox(img, boxes[f], f, T[f], theta), ok = x.n > 0 && x.d < (f === 'ror' ? 90 : 80) && /^-?\d+$/.test(x.s);
       r[f] = ok ? +x.s : null; self.health[f] = ok;
     });
-    var tm = M1.readTimer(img, boxes.timer, T.timer), tok = !!(tm && tm.d < 90);
+    var tm = M1.readBox(img, boxes.timer, 'timer', T.timer, theta), tok = !!(tm && tm.d < 90);
     r.ss = tok ? (+tm.s[4]) * 10 + (+tm.s[5]) : null; r.ones = tok ? +tm.s[5] : null; this.health.timer = tok;
     if (r.bt !== null && (r.bt < 20 || r.bt > 260)) r.bt = null;
     if (r.at !== null && (r.at < 20 || r.at > 300)) r.at = null;
@@ -545,6 +771,7 @@ var M1Engine = (function () {
 if (typeof module !== 'undefined') module.exports = M1Engine;
 </script>
 <script>var DEFAULT_T = {"bt": {"0": "AAAAEP////////9DAAAAAAAQJ9T//////////x8AAAAAZv/////////////YIwAAF5X////gsbGx0P///7gfAIH////jXgAAAGb/////ZgD/////bgAAAAA30P///60Y/////wAAAAAAAEfk////M/////8AAAAAAAAAzP///zP/////AAAAAAAAAMz///8z/////wAAAAAAAADM////0P////8AAAAAAAAAzP//////////AAAAAAAAAMz//////////wAAAAAAAADM//////////8AAAAAAAAAzP//////////LwAAAAAAAMz//////////8wAAAAAAADM///////////MAAAAAAAAzP///7H/////zAAAAAAAR+T///8zu////+dSAAAAN9D///+tGD3/////2D8AAGb/////ZgAQlf/////QsbHQ////uCUAAGb//////////////5kAAAAQJ9T//////////8wYAAAAAADM/////////0MQAAAA", "1": "AAAAAAAABxQUHNb//ykPAAAAAAAZOW//////////iwAAAAg7uP///////////6Y7ADR+/////////////////2K4////////////////////////////////////////dsH//6h2dtr//////////wA1YmIkAAC5//////////8AAAAAAAAAuf//////////AAAAAAAAALn//////////wAAAAAAAAC5//////////8AAAAAAAAAuf//////////AAAAAAAAALn//////////wAAAAAAAACd//////////8AAAAAAAAAAP//////////AAAAAAAAAAB//////////wAAAAAAAAAA6v////////8AAAAAAAAAAKn/////////AAAAAAAAAABG/////////wAAAAAAAAAARv////////8AAAAAAAAAAEb/////////AAAAAAAAAABG/////////wAAAAAAAAAAD6r///////8AAAAAAAAAAAAK0v///8Qc", "2": "AAAAHVD//////3wHAAAAAAAdSdv/////////bToAAAAWqP/////////////dMwAAM///////qI7//////8YtADP////bSR0Abf//////ZgAHJCQkHQAAAAdm/////2YAAAAAAAAAAAAAZv////9mAAAAAAAAAAAAAGb/////ZgAAAAAAAAAAAABm////0zoAAAAAAAAAAAAdvf///5kAAAAAAAAAAAAAxf///9ssAAAAAAAAAAAAAP/////MAAAAAAAAAAAAFtP////iAAAAAAAAAAAAHbb////TJAAAAAAAAAAAFqj////TOgAAAAAAAAAAAKj/////mQAAAAAAAAAAAJL/////2ywAAAAAAAAAF4P4/////x0AAAAAAAAAB3z//////3ckJCQkJCQiADP/////////////////qm2K////////////////////////////////////////ikmS/////////////9tJSQ8AZv////98JCQkJBwcAAAA", "3": "AAscHf///////3wkBAAAAA+I/////////////04AAAB3///////////////iQgAAqP///7Gxjo6x/////9M6AG3//3EXAAAAF6r/////ZgAHJCQHAAAAAABm/////2YAAAAAAAAAAAAAF+T///9mAAAAAAAAAAAAAGb/////ZAAAAAAAAAAAAG3/////mQAAAAAAADmSkpL/////4kIAAAAAAJL//////////7AAAAAAAACh///////////4bwAAAAAAAI7///////////9eAwAAAAARVVW2trb//////ygAAAAAAAAAAAAXmf////9aAAAAAAAAAAAAAELi/////wAAAAAAAAAAAAAAzP////8AAAAAAAAAAAAAIvj/////AAAAAAAAAAAAIqj/////uxdxcXFJSUlJcar/////uxyk/////////////////2YA////////////////4lUbAEmS////////////bToAAAAAJKT//////yQkJAcAAAAA", "4": "AAAAAAAAAAAIlP/TBwAAAAAAAAAAAAAAYv///10AAAAAAAAAAAAAPv////9dAAAAAAAAAAAAJJL/////XQAAAAAAAAAAAHT//////10AAAAAAAAAAB/b//////9dAAAAAAAAAACS////////hQAAAAAAAAAU6P///////4UAAAAAAAAAnP///4z///+FAAAAAAAAR+r//8ZG////hQAAAAAAEbb///9GRv///6oAAAAAAH7///+UBQX0///2FwAAAAvp///nPQAA7v///xcAAACb///6egAAAML///8XAAAkzv//5RcAADv2////ZTsQhP////9fToz1////////kv//////////////////////////////////////////n//////////////////JdjLT////traOyP/////iPAAVTk5OTk5OFTPN////0QAAAAAAAAAAAAAApv///8UAAAAAAAAAAAAAADHe//83AAAAAAAAAAAAAAAA0f+OEgAA", "5": "ABwkJJr/////////oQAAACiC/////////////7YAAABw///////////////MAAAA/////////////86ORQAAAP//////cXFJSUkxAAAAAAD/////oQ0AAAAAAAAAAAAA/////2EAAAAAAAAAAAAAAP////82AAAAAAAAAAAAAAD/////0igcHGZtHAAAAAAA//////////////U5OQAAAP///////////////9dVEwD//////////////////zkAEnHbwHFxcXHD//////+xFgAAAAAAAAAACVXk/////6oAAAAAAAAAAAAAVf//////AAAAAAAAAAAAAA3//////wAAAAAAAAAAAAAl//////8AAAAAAAAAAAAAVf//////AAAAAAAAAAAAIo7/////txJxcXFJBgAwcar/////uxyg/////7GOvf///////2YA/////////////////5gbAFj//////////////5EbAAAET//////////NJBwMAAAA", "6": "AAAAAAATHBwcd///RgAAAAAAAAAYvf////////MAAAAAAABEnv/////////MAAAAAABEzP//////9I6OcQAAAAAAtv///+txcWcAAAAAAAAAUef///9ZAAAAAAAAAAAAKMb///97BQAAAAAAAAAAAD3/////VQAAAAAAAAAAAAA9////0hwRHBwcHAwAAAAAaP////97sP////+ONgAAAP////////////////c9AAD/////////////////1zYA////////63Fxf//////EIv//////jkkAAAiO/////z3/////1yIAAAAAE6r////UUv///8wAAAAAAACS/////z3////MCQAAAAAAkv////89////11UAAAAAAKr/////Pf////+OCAAAADPM////viLE/////28AAB3G/////z0AZtf////vjo6o/////7UbAAC2/////////////84oAAAAKF7///////////YoAAAAAAAx/////////30cAAAA", "7": "BBwcHBwcHBwcHCjS////QEn/////////////////////////////////////////oP///////////////////xJxcXFxcXFxcXF5//////8AAAAAAAAAAAAADf//////AAAAAAAAAAAAAA3/////WAAAAAAAAAAAAADM/////ygAAAAAAAAAAACC/////1EAAAAAAAAAAAAAvP///+E/AAAAAAAAAAAAMdL///95AAAAAAAAAAAAAJT////VQwAAAAAAAAAAADz/////oQAAAAAAAAAAAABr/////6EAAAAAAAAAAAAAa////9UkAAAAAAAAAAAAfe////MWAAAAAAAAAAAAG//////yAAAAAAAAAAAAAEv/////8gAAAAAAAAAAAADy/////6oAAAAAAAAAAABZ+P///6sPAAAAAAAAAAAAyf////9DAAAAAAAAAAAAAMn/////QwAAAAAAAAAAAADJ////jA8AAAAAAAAAAAAAyf//oAwAAAAAAAAA", "8": "AAAAF//////////JAAAAAAAMJ7D//////////ycTAAAJZv//////////////eQAAM//////SsbGxsff//7gfADP////jRAAAAADk////ZgAz////RAAAAAAAu////2YAM////x0AAAAAAJn///9mADP////MCAAAAADk////ZgAz/////5kAAGbQ////ohkADIn////nxMTm////9HcAAABEqv///////////ycAAAAABkTj//////////9xAAAAFDmh/////////////44IADP//////+fY7v//////awYz/////7M5ADnE+f////8z6P////8RAAAAAJn/////cv/////MCAAAAAAAsv//////////bgAAAAAAADb//////////0QAAAAAAAfM/////6T////MCAAAAACS/////3sz/////7WxsbGx9/////8oM/////////////////95CQhm//////////////+NDAAACJn//////////80cCQAA", "9": "AAARHEr//////3ccAAAAAAAXsP///////////y0AAAARmf/////////////dMwAAM//////Sjo6Ou////8YtAKT////jRAAAAC3G////ZgD/////RAAAAAAAM93//8wi////YAAAAAAAAADM////0v///zMAAAAAAAAAzP////////9KAAAAAAAAAMz//////////y0AAAAAACLX///////////dMwAAACK7//////+k/////8ZxcXGq////////F6r//////////////////wAiVd3///////+Z3f////8AAADM//////+wF8z///9gAAAAFxwcHBwcEQDM////MwAAAAAAAAAAAAtt8P//7i0AAAAAAAAAAABm/////2YAAAAAAAAAAABVmf///91EAAAAAAAAAERx//////+ZAAAAAFWOjo7S///////jRAAAAACZ////////////zAAAAAAAItf//////7A5OS0AAAAAAAAX/////xwRAAAAAAAA"}, "at": {"0": "AAAUSP///////7MMAAAAAAAbxv//////////jgsAAAAAef////////////91PQAAAHn//////////////9c2ACLE/////+txyf//////eQC+////tlVJADVVjv///9Io/////5IAAAAAAFX/////Pf////+SAAAAAABV/////z3/////kgAAAAAAVf////89/////5IAAAAAAFX/////Pf////+SAAAAAABV/////z3/////kgAAAAAAL87///89/////5IAAAAAAACS////qf////+SAAAAAAAAkv////9o////kgAAAAAAAJL/////Pf///5IAAAAAAACS/////z3/////aAMAAABV/////z0v4f////8YACMzVf////89AHn/////GABpoo7/////PQB5/////39xcX//////xCIANtf//////////////3kAAAA99////////////84oAAAAAFz//////////14oAAAAAAAFHBzp////sxwFAAAA", "1": "AAAAAAAAGKj//////1UAAAAAABE5OeD///////+JAAAAAABO////////////iQAAAFdxnf///////////4kAAI7l//////////////+JAAD/////////////////iQAA/////////////////6MAABzL/7kcHByo///////yrgAAAAAAAAAAnf////////jjAAAAAAAAAJ3//////////wAAAAAAAACd////////66oAAAAAAAAAnf///////8QAAAAAAAAAAEao///////EAAAAAAAAAAAAYv//////xAAAAAAAAAAAAGL///////LGAAAAAAAAAABi/////////wAAAAAAAAAAYv////////8AAAAAAAAAAGL/////////AAAAAAAAAABi/////////wAAAAAAAAAAYv////////8AAAAAAAAAAGL/////////AAAAAAAAAABi/////////wAAAAAAAAAAYv////////8AAAAAAAAAAAscHO7//8sc", "2": "AAAfLCy2/6+vSiwTAAAAAAAqz///////////lw4AAABtv/////////////+JAAAA////////////////+34AANj////7akl0/P////+2AAAwysrKdAAAAH33////tgAAAAAAAAAAAAAX4P///7YAAAAAAAAAAAAAR+v///+2AAAAAAAAAAAAAADb////tgAAAAAAAAAAAAAL3f///7YAAAAAAAAAAABFtv////+2AAAAAAAAAAAAYf/////1GgAAAAAAAAAAh//////qKgAAAAAAAAAAMe7/////bQAAAAAAAAAAL87/////qggAAAAAAAAAJ5X/////7CIAAAAAAAAAAPP//////+xMAAAAAAAAAHH6////////356enp4mAHn/////////////////PRGg//////////////////g9////////////////////Pf//////////////////kBWg/////////////2xYWBUAESRU/3fgM3gsLCQIAAAA", "3": "AA0kJCy24CysyyQkBwAAABGI/////////////zEAAACQ//////////////+JTgAA/////////////////7YAAP////+xSUlxyf////+2AAAwpv/VdAAAADXn////tgAAAAAAAAAAAAAX4P///7YAAAAAAAAAACBJuv////+2AAAAAAAAAAAVc///////tgAAAAAAAD6SsP///////7YAAAAAACPV//////////+2AAAAAAAx////////////9WgAAAAAKur///////////+7JAAAAABOtrbS/////////z0AAAAAAAAALTl9tv////9RAAAAAAAAAAAAAFX//////wAAAAAAAAAAAABV//////8AAAAAAAAAAACnVf////9YABEkJBUAAAAAzP//////PReg//+xSUlJceX//////z09/////////////////8YjPf///////////////9U0ABGg/////////////9c0AAAAEST0//////9GJCQXAAAA", "4": "AAAAAAAAAAAd6f//hQAAAAAAAAAAAAAApv///4UAAAAAAAAAAAAALtT///+TCAAAAAAAAAAACMv//////zcAAAAAAAAAABH////////QAAAAAAAAABfK////////6QAAAAAAAABv/////////+kAAAAAAAASvv/////////pAAAAAAAAov//////////6QAAAAAAXNb///+Qi////+kAAAAADaL///zBwYv////pAAAAADf////0JSVD////6QAAAACf////9CUAQ////+k6LQB2+v////QAAEP////62tRI+P/////67e3y////////f////////////////////6////////////////////+R//////////////////+REDVh/+Wn/7l79v//////TgAACAkJCQkJBkDw////rA0AAAAAAAAAAAAAkP//+HEXAAAAAAAAAAAAAEvv/+kAAAAAAAAAAAAAAAAATFhQAAAAAAAAAAAAAAAAAAAAAAAA", "5": "JCQkJCQkJCSj///JAAAAAP//////////////2QAAAAD//////////////+AAAAAA///////////////gAAAAAP////////////9xOgAAAAD//////zAkJCQkBAAAAAAA/////1ICAAAAAAAAAAAAAP//////Ukl3TQAAAAAAAAD//////////6ttLAAAAAAA/////////////72SkkUAAP////////////////95AAD/////////////////7Nsj29vb29vb29vb6///////KAAAAAAAAAAAAEnt/////2YAAAAAAAAAAAAAiP//////AAAAAAAAAAAAAA3//////wAAAAAAAAAAAACn//////8AAAAAAAAAAAAA5P////9QBiQkDQAAAACU////////KGb//4xJSUlJsv///////yj//////////////////7QX/////////////////7IjAGb/////////////2UkjAAAGJCSu/////4AkJB0AAAAA", "6": "AAAAABAcJHj/////TAAAAAAAAC1t/////////8wAAAAAADPd///////////MAAAAAC3G////////////cQAAAABm////////jnFJSQAAAAAizP////98JA4AAAAAAAAAUP//////ZgsAAAAAAAAAAP///////2YAAAAAAAAAAAD/////6aSo0tKk/0oXAAAA////////////////1zkXAP//////////////////ZgD//////////////////6oX////////3tvb2///////M////////yIAACJV4P///7v/////6ZIYAAAAAMz//////////8wAAAAAAADM///////////SEQAAAAAAzP/////S/////5kYAAAAAMz/////Isz///+7IgAAADPd/////wBm/////6pxSXHG/////8cALcb///////////////89AACZ////////////////MwAAIkn///////////Y5OQsAAAAASv////////8kAAAA", "7": "AAAaJCQkfCSs////////M0lYy////////////////23//////////////////////////////////////////23///////////////////8JJCQkJCQkJCSoqP////9QAAAAAAAAAAAAZv//////MwAAAAAAAAAAAGb//////zMAAAAAAAAAABao////4JIdAAAAAAAAAAAz7////7YAAAAAAAAAAAAAM/////+ZAAAAAAAAAAAAAIf/////mQAAAAAAAAAAAB3/////zAAAAAAAAAAAAACO/////5IAAAAAAAAAAAAAzP////8AAAAAAAAAAAAAJun/////AAAAAAAAAAAAAJn//////wAAAAAAAAAAAFfw//////8AAAAAAAAAAABm/////+leAAAAAAAAAAAAkv////9mAAAAAAAAAAAAFqr////nOgAAAAAAAAAAAG3/////mQAAAAAAAAAAAABt////20IAAAAAAAAAAAAAEHz//8wAAAAAAAAA", "8": "AAAAHVD///////8zAAAAAAAdSdv/////////bUksAAAAZv//////////////mSwAHb3///////////////9mAD3/////////////////ZgD///////98JFD//////2YA////////fGFQ6f////9mAP///////9PFcqv/////ZgCo//////+oior//////2YAM/T///////////////hfAABm//////////////+2HQAAD6j////////////qlQ8AADzV//////////////9mAA+S////////////////kkkz////////1eX/////////qP//////qBYWbcX//////////////2YAAAAs2/////////////9mAAAAAMz//////////9MkFQAADyTT/////8X//////5JJSZL///////8dvf////////////////+oAGb///////////////+1GgAdSdv///////////+2SQAAAADM///////////TFgAA", "9": "AAARI////////7YkAAAAAAAXsP///////////y0AAAAAZv/////////////dTgAAF6r//////////////9c2AKT//////2Zhjv//////tiv/////3VUYABFVjv////8z/////6oAAAAAAFX/////Pf////+xAAAAAABV/////+n/////zAAAAAAATPP//////////8wAAAAAACLX/////77////dVSIAVVWO//////89//////+q2///////////F6r//////////////////wBX6v////////////////8AADk5wf/////siNf/////AAAAABwcHBwcGgvM/////wAAAAAAAAAAAAsc0v///+kAAAAAAAAAAAuI//////89AAAAAAAAAAAz////////PQAAAEVxcXFxjv//////uxwAAADM/////////////2YAAAAA8///////////3VUiAAAAAMz//////////zEAAAAAAAAXgv///9IcHBwFAAAA"}, "ror": {"0": "AAAAFEP//////3IcAAAAAAAAIvX//////////y0AAAAAHLv////////////dKgAAEJX/////9O///////8YlADP/////2HFxnZ3Y////ZgCR////51IAAAAAmf///7cc/////14AAAAAAJn/////M/////8AAAAAAAA74P///zP/////AAAAAAAAAMz///8z/////wAAAAAAAADM////M/////8AAAAAAAAAzP///z3/////AAAAAAAAAMz////v/////wAAAAAAAADM//////////8fAAAAAAAAzP//////////kgAAAAAAAMz//////////8wAAAAAAADM///////////MAAAAAAAAzP///7Gh////5EcAAAAAJ+T///8zM/////+7GAAAAJn/////Mxy7/////6ZhH53Y////oRQAZv//////4cD/////xiUAABim/////////////5kAAAAAGE7//////////y0YAAAAAAAEFHL/////chQAAAAA", "1": "AAAAAAAABxQUsf////+qAAAAAAAAGm//////////qgAAAAAAO77//////////6oAADROTv/////////////ETmLL////////////////3p3//////////////////9F2////////0Xb////////YiWJilv9iYkEA//////////8AABpOAAAAAP//////////AAAAAAAAAAD//////////wAAAAAAAAAA//////////8AAAAAAAAAAP//////////AAAAAAAAAADr+P///////wAAAAAAAAAAAKr///////8AAAAAAAAAAACq////////AAAAAAAAAAAAqv///////wAAAAAAAAAAAKr///////8AAAAAAAAAAACq////////AAAAAAAAAAAAqv///////wAAAAAAAAAAAKr///////8AAAAAAAAAAACq////////AAAAAAAAAAAAqv///////wAAAAAAAAAAAKr///////8AAAAAAAAAAAANYv//////", "2": "AAscHP///////3ccAAAAAAuI/////////////y0AAAB3///////////////dMwAA///////Sjuj//////8YtAI7//45xRABbcar/////ZgARVVURAAAAAABm/////2YAAAAAAAAAAAAAZv////9mAAAAAAAAAAAAAGb/////ZgAAAAAAAAAAAAZ3////mQAAAAAAAAAAAAAz/////5kAAAAAAAAAAAAAd////+5mAAAAAAAAAAAAW/////9xAAAAAAAAAAAAVej////vAAAAAAAAAAAiqt3///+ZKwAAAAAAAAAAM///////ZgAAAAAAAAAAAOj////vpAsAAAAAAAAAEdL////otQAAAAAAAAAAF7D/////MwAAAAAAAAAAEZn//////3dVVVVVVVVVEY7//////////////////47/////////////////////////////////////////d2D//////////////9c5OQsGd/9KHBwcHBwcHBwUAAAA", "3": "AAAAFxwcHNLSHBwcAAAAAAs5Odf//////////y0AAAAz///////////////dMwAAjv//////u7H//////8YtAI7///+PcS0Acar/////ZgARVVVVEgAAAAAiu////2YAAAAAAAAAAAAAAJn///9mAAAAAAAAAAAAAACZ////ZgAAAAAAAAAAABx3////9FsAAAAAADk5OTnm/////5kAAAAAAAD//////////6pRAAAAAABb///////////MRAAAAAAAW////////////9I5AAAAAABVVVVVd///////zCIAAAAAAAAAAAs5sP/////SAAAAAAAAAAAAABHS/////wAAAAAAAAAAAAAAzP////8AAAAAAAAAAAAAAMz////SAAAAAAAAAAAAADPd////MxdxcXFbAABbcXHG/////zMz////6I6O6P///////54SM////////////////7siADP//////////////zkiAAAGHBwczf//ShwcHBwAAAAA", "4": "AAAAAAAAAABU////XQAAAAAAAAAAAAAd/////10AAAAAAAAAAAAAuf////+CBQAAAAAAAAAAJM///////xcAAAAAAAAAEqn///////8XAAAAAAAAAFv/////////FwAAAAAAAADo///awf///xcAAAAAAABk9v//R4v///8XAAAAAABA4v//fwCL////FwAAAAAS2v///0YAi////xcAAAAAF////50LAIv///8XAAAAAML//9QLAACL////FwAAAIv////CAAAAi////xcAAAud///mFAAAC53///87Jydw////gjs7O3D///////////////////////////////////////////////////////////////////////+pm///zXZ2dnZ2wf///4J2IBtiYjMAAAAAAIv///8XAAAAAAAAAAAAAACL////FwAAAAAAAAAAAAAAi////xcAAAAAAAAAAAAAABXY//8XAAAAAAAAAAAAAAAAJakUAgAA", "5": "A17//////////////3kAACj///////////////95AABa////////////////eQAAav////+9/96xsbGxsVQAAP//////Hp1bAAAAAAAAAAD//////w0AAAAAAAAAAAAA//////8NAAAAAAAAAAAAAP//////DQAAAAAAAAAAAAD//////7WxsbGxEwAAAAAA/////////////8rEfAAAAP////////////////FmAAA5////////////////9UoAJevr6+vr6+vr6/3/////KAAAAAAAAAAAAADD/////0kAAAAAAAAAAAAADf//////AAAAAAAAAAAAAA3//////wAAAAAAAAAAAAAN//////8AAAAAAAAAAAAADf////+cAAAAAAAAAAAAAIH/////KBmdnToAAAAAW531/////yi9///NsbGxsd7/////ok4M/////////////////3kAAEn/////////////0icTAAADXv//////////LA8AAAAA", "6": "AAAAAAQUHBz//////3kAAAAAAABS//////////eBAAAAACNV///////////MAAAAAACZ////////////cQAAAAA50v///+uOcXFxcQAAAAAYrf///9BVAAAAAAAAAAAAM////+RHAAAAAAAAAAAAADb////MAAAAAAAAAAAAAADA////uxwcHEpqHBwAAAAA/////9Hc////////xDkAAP/////////////////vVgD///////////////////Mv///////3cXFxcez/////M//////3gQAAAAAzzP///z3/////zAAAAAAAAJL///9i/////z8AAAAAAAA2/////7H///+eAAAAAAAATv////89////5CIAAAAAAJL///+hM/////+OIgAAAFLd////MzP//////6pxcX/Y////xCIQTs3//////////////3kAAACZ/////////////7EYAAAAGC3//////////zkiAAAAAAAAFHL/////dxwAAAAA", "7": "BhwcHBwcHBxK////////SmD//////////////////////////////////////////////////////////////3Gqqo5xcXFxcXHG/////44AIiIRAAAAAAAAmf////8zAAAAAAAAAAAAAJn///+ICwAAAAAAAAAAAFv0////ZgAAAAAAAAAAAAZ3////mQAAAAAAAAAAAAAz////9HcAAAAAAAAAAAAAd////8wAAAAAAAAAAAAAAP////9xAAAAAAAAAAAAAHH/////AAAAAAAAAAAAAADM/////wAAAAAAAAAAAAAAzP///2AAAAAAAAAAAAAAiPn///8zAAAAAAAAAAAAZv////9mAAAAAAAAAAAAAGb/////ZgAAAAAAAAAAABGZ////3UQAAAAAAAAAAAAz////6FUAAAAAAAAAAAAApP///8wAAAAAAAAAAAAAAP/////MAAAAAAAAAAAAAAD/////LQAAAAAAAAAAAAAASv//SgAAAAAAAAAA", "8": "AAAAEhwcWP///zQcEgAAAAASObb//////////7YbAAANi///////////////phsAKP////////////////9RAKD/////eXFxcdr/////sRb//////w0AAAA/7f////8o//////8NAAAAAOT/////KP//////DQAAAADk////ZATn///////DHBzD////8EgAH9j//////////////3kAAABR/////////////+BRAAAAUf/////////////LNgAAAFH//////////////8OOFhvF/////9JVt////////yjP/////+oqACE56v/////P//////8lAAAAACX///////////9MAQAAAAAANv//////////YgMAAAAAADb///////////8NAAAAAEx5////////////eXFxcXHw/////6CI//////////////////8oDYv///////////////+LDQASl////////////7Y5EgAAAA0cz///////NBwSAAAA"}, "timer": {"0": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkM2JiYmJiNikAAAAAADd2qf////////++dj0AADme//////////////+LDwWq/////////////////51l//////////////////+xfP//////1v//377q////yHD//////4///1eG//////////////85ueULVf//////8f//////OVrjFFX/////p9j//////2a543Rv/////04A//////+ZuenHqv////9OAP//////Zqr//6r/////TgDL/////5a5//+q/////04n5/////////////////9OTs//////////////////dmKdzP///////////////6gATt2d////////////Xk5OAAAzWUu+////////OxYAAAAAAAkAGidUJycaFAAAAAAAAAAAAAAAAAAAAAAAAAAA", "1": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAABgnJycnJx8AAAAAAAAADDux///////MAAAAAB8pTnL/////////3E4fAGKh////////////////ZgD//////////////////612/////////////////////2KFre////////////////8AAABOTk64////////////AAAAAAAAmf///////////wAAAAAAAJnj//////////8AAAAAAAAMFP//////////AAAAAAAAAAD//////////wAAAAAAAAAA//////////8AAAAAAAAAAP//////////AAAAAAAAAAD//////////wAAAAAAAAAA//////////8AAAAAAAAAAP//////////AAAAAAAAAAB2rf////+tdgAAAAAAAAAAAGb//+BiJwAAAAAAAAAAAAAQKT8/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "2": "AAAAAAAAAAAAAAAAAAAAAAAAAB8nJycnJycnHQAAAAAAADP///////////8vAAAAAE7/////////////3E4AAACo////////////////AAAAif+UiYmJiYn//////wAAAAB2AAAAAAAA//////8AAAAAAAAAAAAAAP//////AAAAAAAAAAAAABz//////wAAAAAAAAAAAADE/////zsAAAAAAAAAAAAA/////6kAAAAAAAAAAAAy6/////9xAAAAAAAAAAAUy//////rNwAAAAAAAABL////////jgAAAAAAAAA7y////////44AAAAAAABO////////////TgAFAGKt9P///////////9Ktra3//////////////////////////////////////////3T/////////////////hTMpKU5OTk5OTk5OTk5OThEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "3": "AAAAAAAAAAAAAAAAAAAAAAAAABQnJycnJycnJwAAAAAAHzv///////////+SHwAACe7//////////////90AAHT/////////////////AAB+ie+hiYmJtv///////wAAAAB2GAAAACf///////8AAAAAAAAAAFKd////////OQAAAAAAAFzR/////////wAAAAAAAEvE//////////8AAAAAAADY////////////OQAAAAAAu////////////+4UAAAAAAAA6+vr/////////wAAAAAAAAAAAP////////8AAAAAAAAAAAD/////////AAARAAAAABpO/////////2JirYFiYqOt/////////2v///////////////////+J/////////////////6NUAGJi/////////////6ghAAAAAEhOTk5OTk5OTikjAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "4": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkZJycAAAAAAAAAAAAAHDtmtP88AAAAAAAAAAAAIOP/////oQAAAAAAAAAAAGn///////8tAAAAAAAAAE7g////////NAAAAAAAERWq/////////1UAAAAAAEaF3v////////9wAAAAAC2k3P//////////cAAAAGbE/////////////3kAAA5+6//////////////pcADr6////////////////+4o//////////////////////////////////////////////////////////////93XLj/////////////////YmKdlv//1J2dnZ3//////52p/////5AAAAA5/////5NOdnZ2dnY9AAAADj1xs3YOAAAAAAAAAAAAAAAAM2ItAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "5": "AAAAAAAAAAAAAAAAAAAAAAAABycnJycnJycnJycAAAAAB7b////////////zAAAAAE7/////////////wwAAAADu////////////00YAAAAA////////////wkwAAAAAHP///////////0cAAAAAAKj///////////+dUgAAAAD//////////////+pcAAAAO///////////////88QAAADu////////////////lAAAEuD///////////////cOAAAAAAAAAAB36////////wAAAAAAAAAAAAD///////8AAAAAAAAAAAAu////////AAAAAAAAAAAco///////sQBiYmJiYq2trf//////wGJ2uP///////////////+5OPW7//////////////3Y9AAAeYuD//////////2IAAAAAAAA/Tk5OTk5OTikAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "6": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQUFBAAAAAAAAAAAAAAHSj////SDQAAsiYOAAAAAPX/////zCMAAP/vMzMADDv3////zKMAAAD///+zAD3/////0EsAAAAA0f//4kdz/////8IAAAAAAJ3////////////ghQAAAACO/////////////7FcKAAAN+L//////////////3AAAA7D//////////////+vFAAAuP///////////////2MAALj///////////////+4AAC4////////////////uAAAuP////////////////IPALj///////////////+4AD64////////////////uABc6////////////////9l2wv//uD09sf////////9NPf///zMAACj3//////+NBAD/7ikIAAAAJ7r///9LEgAA/+sAAAAAAAAVHx8fBQAAABQTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "7": "AAgRFBQUof/////////vACd8/////////////////yf//////////////////////////////////////////8z4/////////////////50AgImJiYmJiYn///////sPAAAAAAAAAAAA///////uAAAAAAAAAAAAAP//////2wAAAAAAAAAAAAD/////50MAAAAAAAAAAAB3/////zsAAAAAAAAAAAAA2P////8AAAAAAAAAAAAAiP/////MAAAAAAAAAAAAJP/////regAAAAAAAAAAAFb/////ngAAAAAAAAAAABGZ/////wAAAAAAAAAAAABO//////8AAAAAAAAAAAAqqv///9iDAAAAAAAAAAAAbf////+ZAAAAAAAAAAAAAFZ2yP+/RwAAAAAAAAAAAAAAADtiNAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "8": "AAAAAAYUdf///2EUBQAAAAAABydn/////////1onAAAAB13//////////////w0AAB7///////////////8eAAAz////////////////HgAAl////////////////x4AAB7///////////////8eAAAe////////////////HgAACW7//////////////x4AAAAt//////////////8eAAAALf//////////////HgAADu///////////////+4O/////////////////////////////////////////////////////////////////////////////////////52drv//////////////qJ0AAC2l/////////////x4AAAAAOHaC////////dnYOAAAAAAAAEkxiYmJiMwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "9": "AAAAABQU/////xQGAAAAAAAAJyf/////////ZycAAAAAH///////////////OwAAAP////////////////8AAGL/////////////////OQD///////+WiYmJ//////IA////////dgAAAP//////D////////5YAAAD//////52j//////+WXFxc////////O///////////x////////wCP//////////////////8AFP//////////////////AAAAYuvr6+v//////////wAAAAAAAAAA/////////9gAAAAAAAAAAP///////8QGAAAAAE5OTk7///////8AAAAAAGL///////////+dAAAAAACJ//////////+JAAAAAAAAMXb//////3Z2AAAAAAAAAAAAYmJiYmIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}};</script>
+<script>var PRESETS=[{"name":"곤조베 (10/25, 최고)","bt":[null,170,170,169,162,154,152,145,141,138,136,132,130,129,126,123,121,120,117,116,115,113,112,112,110,109,109,107,107,107,106,106,105,105,104,104,104,104,104,104,104,104,104,104,104,104,104,104,104,105,105,105,105,106,106,106,106,106,107,107,108,108,108,109,109,109,110,110,111,111,112,112,112,112,113,113,114,114,114,114,116,115,116,116,117,117,117,118,118,119,119,120,120,120,121,121,121,122,122,123,123,122,124,123,124,125,125,125,125,126,126,126,127,128,128,128,128,128,129,129,130,130,130,130,131,131,132,132,132,132,133,133,133,133,134,134,135,135,136,136,136,136,137,137,137,137,137,null,138,139,138,139,140,140,140,141,141,141,141,142,142,142,143,143,143,144,144,144,144,144,145,145,145,145,145,146,146,147,147,147,147,147,148,148,148,148,149,149,149,149,150,150,151,151,151,152,152,152,152,153,153,153,153,153,154,154,154,154,155,155,155,155,155,156,156,157,156,157,157,157,158,158,158,158,158,159,159,160,160,160,160,160,160,161,161,161,161,161,162,162,162,162,163,163,163,163,null,164,164,164,164,164,164,165,165,165,165,165,166,166,166,166,166,167,167,167,168,168,168,168,168,168,169,169,169,169,170,170,170,170,171,170,171,171,171,171,171,171,172,172,172,172,172,173,172,172,173,173,173,174,174,174,174,174,174,174,175,175,175,175,175,176,176,176,176,176,176,176,177,177,177,177,177,177,178,178,178,179,179,178,179,179,179,179,179,180,180,179,180,180,180,180,180,181,181,181,181,181,181,181,182,182,182,183,183,183,183,183,183,183,184,184,184,184,184,184,184,185,185,185,185,185,185,185,185,185,186,186,186,185,186,186,186,187,186,187,187,187,187,187,187,187,188,188,188,188,188,188,188,188,189,188,188,188,189,189,189,189,189,189,189,189,190,189,189,188],"at":[null,164,null,166,null,164,168,168,168,null,164,164,164,167,167,168,168,168,169,169,169,170,170,170,171,171,171,171,172,172,173,173,171,173,174,174,174,174,174,178,178,175,176,176,176,176,176,176,177,177,177,177,178,177,178,178,178,179,179,179,179,178,179,179,179,179,179,179,180,184,180,181,180,181,181,180,181,181,181,181,181,181,181,182,182,182,182,182,182,182,182,183,183,183,183,183,183,183,183,183,184,183,184,184,184,183,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,184,185,184,184,185,185,185,185,185,185,185,185,185,185,184,185,185,185,185,185,null,185,185,184,186,186,185,185,185,185,185,184,185,184,185,185,184,184,184,184,184,184,184,184,184,183,184,183,184,183,183,183,183,183,183,183,182,183,183,183,183,183,182,183,182,183,183,182,183,182,183,183,182,183,182,182,182,182,182,182,182,182,182,182,182,182,182,182,181,182,182,182,182,181,181,181,181,181,182,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,null,null,180,180,181,180,180,180,180,180,180,184,184,184,184,179,179,179,179,178,179,179,178,176,174,174,174,178,178,174,177,177,177,177,178,177,178,178,178,178,179,178,178,178,178,177,177,177,177,177,177,177,177,177,176,177,176,177,176,176,176,176,176,176,176,176,176,176,176,176,176,176,176,175,175,175,175,175,174,178,174,174,174,174,174,174,173,174,173,173,173,173,173,173,172,173,172,172,172,172,172,172,171,171,172,171,171,171,171,171,171,171,171,171,170,170,170,170,170,170,170,170,170,168,169,169,169,169,169,169,169,169,169,169,169,169,169,169,169,169,169,169,168,169,169,164,169,169,169,169,169,169,169,168,169,169,169,169,169,169,169,168,169,169,169,168,169,170,170,172],"power":[[1,70],[147,60],[246,50],[319,40]],"ev":{"tp":34,"fc":385,"drop":410},"green":"에티오피아 바샤 베켈레 곤조베 워시드"},{"name":"10/25 제안","bt":[null,168,168,169,154,156,147,144,139,137,132,130,128,125,122,121,120,117,115,113,112,112,110,109,108,107,107,105,105,104,104,104,103,103,102,101,101,101,101,101,101,101,101,101,101,101,101,101,101,102,102,null,102,102,102,102,103,103,103,104,104,104,104,104,105,105,105,106,106,106,106,107,107,107,108,108,108,108,108,109,109,109,110,110,111,111,111,112,112,112,113,112,113,114,113,114,115,115,115,115,116,117,117,117,117,118,118,118,118,119,119,119,120,120,120,120,121,121,121,122,122,123,123,123,124,123,124,124,125,125,125,125,126,126,128,127,128,128,128,128,128,128,129,129,129,130,130,130,131,131,131,131,132,132,132,132,132,133,133,133,134,134,134,135,135,135,136,136,136,136,137,136,137,137,138,138,138,138,139,139,139,null,140,140,141,141,141,141,142,142,142,143,143,143,143,143,144,144,144,144,144,145,145,145,145,145,146,146,146,146,147,147,147,147,147,148,148,148,148,148,149,149,149,149,149,150,150,150,150,151,151,151,152,152,152,152,152,153,152,153,153,153,154,154,154,154,155,155,155,155,155,155,156,156,156,156,156,157,157,157,157,157,158,158,158,158,158,158,159,159,159,160,160,null,160,160,160,160,161,161,161,162,162,162,162,163,163,163,163,163,164,163,164,164,164,164,165,165,165,165,165,166,166,166,166,166,166,167,167,168,168,168,168,168,168,168,168,168,168,168,169,169,169,170,169,169,169,170,170,170,171,171,171,171,171,172,171,171,172,172,172,172,172,173,173,173,174,173,174,173,174,174,174,175,174,175,175,175,175,176,176,176,176,176,177,176,177,177,177,177,177,178,178,178,178,178,178,179,179,179,179,179,179,179,180,180,180,180,181,181,181,181,181,181,181,182,182,182,182,182,182,183,184,184,184,184,184,184,185,184,184,185,185,185,185,185,186,186,186,186,186,186,186,186,187,187,187,187,187,188,187,188,188,188,188,188,189,189,189,189,189,189,190,190,190,190,190,190,190,190,190,190,190,189,189,189],"at":[null,164,160,161,160,160,164,161,161,161,161,161,161,161,161,161,161,162,161,162,162,162,162,162,162,162,162,162,162,163,162,163,163,163,163,163,164,163,163,163,164,163,164,164,164,164,164,164,164,163,164,null,164,164,164,164,168,165,168,165,165,165,165,166,166,166,166,166,167,166,167,167,167,168,168,168,168,169,169,168,168,169,170,169,170,170,170,171,171,171,171,171,172,172,172,172,173,172,173,173,174,173,174,174,174,174,174,178,178,176,176,176,176,176,176,176,177,177,176,177,177,178,178,178,178,178,178,178,178,178,179,178,179,179,179,179,180,179,180,184,180,179,179,180,180,180,180,180,181,181,184,180,180,181,181,181,181,181,181,181,181,181,181,181,181,181,182,181,182,181,182,182,182,182,182,182,182,182,183,182,182,null,183,183,188,188,188,182,182,182,182,182,182,181,182,181,181,181,181,182,null,181,181,181,181,181,181,181,181,181,181,181,181,181,180,180,180,180,180,180,180,180,180,180,184,179,179,179,179,179,179,179,179,179,179,180,179,179,179,179,179,179,179,179,179,179,179,179,179,179,179,178,179,178,178,178,178,179,179,178,179,178,179,178,178,178,179,178,179,178,178,179,179,null,179,179,178,178,178,178,178,178,178,178,178,177,177,177,177,177,177,177,177,177,177,177,177,177,177,176,176,177,176,177,177,177,176,176,176,176,176,176,176,176,176,176,175,176,176,176,178,176,175,176,175,176,175,176,178,178,175,178,176,175,175,175,175,175,175,176,176,178,175,174,176,175,178,174,178,178,178,178,174,176,174,178,175,178,176,176,178,174,176,175,176,175,178,178,175,176,174,174,178,174,174,174,174,174,178,174,174,174,174,174,174,174,176,174,174,178,175,174,174,178,178,178,175,174,178,178,175,175,175,178,178,178,175,178,175,178,173,175,175,175,174,178,174,174,174,175,174,174,178,174,174,173,173,174,174,174,175,178,174,175,174,174,174,174,174,174,174,173,173,173,173,174,174,174,174,174,174,174,178,178,176,176],"power":[[1,50],[50,70],[181,60],[273,50]],"ev":{"tp":35,"fc":410,"drop":450},"green":"에티오피아"},{"name":"10/25 발현","bt":[null,169,167,163,155,154,145,140,136,132,131,128,125,123,122,120,118,116,114,113,112,110,109,108,107,106,105,105,104,104,103,102,102,101,101,101,100,100,100,100,99,99,99,99,99,99,99,100,99,99,100,99,100,100,100,100,100,100,100,101,101,101,101,102,102,102,103,103,104,103,104,104,104,105,105,105,105,105,105,106,106,107,107,108,108,108,109,109,109,110,110,110,111,112,112,112,113,112,113,113,114,114,114,115,114,116,115,116,116,116,117,117,117,118,118,118,119,119,120,120,120,120,121,121,121,122,122,122,123,122,123,123,124,124,124,125,125,125,126,126,126,126,127,127,128,128,128,128,128,129,129,130,130,130,130,130,131,131,131,131,132,131,132,132,132,133,133,134,134,134,135,134,135,136,136,136,136,136,137,137,137,138,138,138,138,139,139,139,null,139,139,140,141,141,141,141,142,142,142,142,143,143,143,144,144,144,144,144,145,145,145,145,146,146,146,146,146,147,147,147,148,148,148,148,148,149,149,149,150,150,150,150,150,151,151,151,152,151,152,152,152,152,152,152,152,153,153,153,153,154,153,154,154,154,154,155,155,155,156,156,155,156,156,156,157,157,157,157,157,157,158,158,158,159,159,159,159,160,160,null,160,160,161,161,161,161,161,161,162,162,162,162,163,163,163,164,164,164,164,164,165,165,165,165,165,165,166,166,166,166,167,167,167,167,167,168,168,168,168,168,168,169,168,169,169,169,169,169,169,170,170,170,170,171,170,171,171,171,171,171,171,171,172,172,172,172,172,172,null,173,173,173,173,174,174,174,174,174,175,174,174,175,175,175,176,175,176,176,176,176,176,176,177,177,177,177,177,178,178,178,178,178,178,178,178,178,178,179,179,179,179,179,180,180,180,180,180,180,181,181,181,181,181,182,182,181,182,182,182,182,182,182,183,183,183,183,183,184,183,183,183,184,184,184,184,184,184,184,185,184,184,185,185,185,185,185,186,186,186,186,187,187,187,187,187,187,187,187,188,188,188,188,188,188,189,189,188,189,189,189,189,189,189,189,189,190,190,190,190,189,190,190,190,190,190,190,190,190,189,189,189],"at":[null,null,null,null,154,null,null,156,154,156,155,156,null,154,null,null,157,151,null,151,154,154,158,159,154,156,155,151,155,164,159,159,159,164,164,null,159,164,164,164,161,161,161,161,161,161,161,161,161,161,161,null,null,null,null,163,null,167,163,null,null,null,164,168,168,168,164,164,161,161,161,null,168,162,168,168,164,168,169,168,166,166,166,168,171,171,171,171,171,171,171,171,172,172,172,173,173,173,173,174,174,174,174,178,174,176,175,null,null,176,176,175,176,176,176,176,176,177,176,177,177,177,177,177,177,178,178,178,178,178,178,179,179,179,179,179,175,179,179,184,186,184,186,186,184,184,186,184,186,186,186,186,186,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,null,181,182,187,182,187,187,187,187,187,184,null,null,181,181,181,182,182,187,187,187,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,182,181,181,181,182,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,181,186,184,186,186,186,184,186,184,181,184,184,186,186,181,184,184,186,184,186,184,186,null,null,184,184,184,184,null,184,184,184,184,186,184,179,179,179,179,179,179,179,179,179,179,179,178,175,175,178,179,179,179,175,178,178,178,178,178,178,178,178,178,178,177,178,178,176,null,null,null,178,178,171,178,178,177,171,171,176,176,171,null,177,177,177,177,177,177,176,null,null,174,178,174,174,null,174,178,176,178,178,178,178,174,171,173,171,171,172,171,174,174,174,174,174,174,174,174,174,174,174,173,173,173,173,171,171,171,173,173,171,171,171,171,173,null,null,171,171,171,171,171,171,171,171,172,171,171,171,171,171,171,171,171,171,171,171,171,171,171,171,171,171,171,171,171,171,176,176,176,176,176,176,176,176,176,null,null,null,171,176,176,176,178,null,174,176,176,176,176,178,176,176,176,176,176,176,176,176,null,176,null,null,null,176,176,176,176,176,176,176,176,176,176,176,176,176,176,174,171,171,171,171],"power":[[1,50],[47,70],[188,60],[279,50],[347,40]],"ev":{"tp":40,"fc":420,"drop":475},"green":"에티오피아"}];</script>
 <script>/* M1 실시간 — 화면. 사파리 14 호환(옵셔널 체이닝·flex gap 미사용) */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
@@ -576,7 +803,9 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   /* ---------- 설정 ---------- */
   var DEF_BOX = { ror: [0.1597, 0.6766, 0.25, 0.7055], timer: [0.2875, 0.6734, 0.4528, 0.6984], bt: [0.1653, 0.7227, 0.2556, 0.75], at: [0.3681, 0.7164, 0.4569, 0.7445] };
   var boxes = load('boxes', null) || JSON.parse(JSON.stringify(DEF_BOX));
+  var theta = load('theta', 0) || 0;
   var settings = load('settings', { fcTemp: 183, startPower: 50, name: '', green: '', size: 125, alerts: true });
+  if (settings.track === undefined) settings.track = true;
   if (!settings.v2) { settings.rorWin = 'fast'; settings.v2 = 1; save('settings', settings); }
   var LABEL = { bt: 'BT', at: 'AT', ror: 'ROR', timer: '타이머' };
   var COLOR = { bt: '#ff5d8f', at: '#38bdf8', ror: '#facc15', timer: '#a78bfa' };
@@ -613,13 +842,14 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var W = vidW(), H = vidH(); if (!W || !H) return null;
     var ks = Object.keys(boxes), x0 = 1, y0 = 1, x1 = 0, y1 = 0;
     ks.forEach(function (k) { var b = boxes[k]; x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]); });
-    var X0 = Math.max(0, Math.floor(x0 * W) - 4), Y0 = Math.max(0, Math.floor(y0 * H) - 4), X1 = Math.min(W, Math.ceil(x1 * W) + 4), Y1 = Math.min(H, Math.ceil(y1 * H) + 4);
+    var mg = 4 + Math.ceil(Math.abs(Math.sin(theta)) * (x1 - x0) * W * 0.6);
+    var X0 = Math.max(0, Math.floor(x0 * W) - mg), Y0 = Math.max(0, Math.floor(y0 * H) - mg), X1 = Math.min(W, Math.ceil(x1 * W) + mg), Y1 = Math.min(H, Math.ceil(y1 * H) + mg);
     var w = X1 - X0, h = Y1 - Y0; if (w < 8 || h < 8) return null;
     if (work.width !== w || work.height !== h) { work.width = w; work.height = h; }
     wctx.drawImage(video, X0, Y0, w, h, 0, 0, w, h);
     var id = wctx.getImageData(0, 0, w, h), bx = {};
     ks.forEach(function (k) { var b = boxes[k]; bx[k] = [b[0] * W - X0, b[1] * H - Y0, b[2] * W - X0, b[3] * H - Y0]; });
-    return { img: { data: id.data, width: w, height: h, ch: 4 }, boxes: bx };
+    return { img: { data: id.data, width: w, height: h, ch: 4 }, boxes: bx, X0: X0, Y0: Y0, theta: theta };
   }
 
   var health = {}, lastRead = {};
@@ -631,14 +861,14 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var scr = document.body.getAttribute('data-screen');
     if (scr === 'align') {
       Object.keys(boxes).forEach(function (k) {
-        if (k === 'timer') { var r = M1.readTimer(g.img, g.boxes.timer, TEMPL.timer); health.timer = r ? (r.d < 90 ? 2 : 1) : 0; lastRead.timer = r ? r.s.replace(/(\d\d)(\d\d)(\d\d)/, '$1:$2:$3') : '—'; }
-        else { var x = M1.readField(g.img, g.boxes[k], k, TEMPL[k]); health[k] = x.n ? (x.d < 80 ? 2 : 1) : 0; lastRead[k] = x.s || '—'; }
+        if (k === 'timer') { var r = M1.readBox(g.img, g.boxes.timer, 'timer', TEMPL.timer, theta); health.timer = r ? (r.d < 90 ? 2 : 1) : 0; lastRead.timer = r ? r.s.replace(/(\d\d)(\d\d)(\d\d)/, '$1:$2:$3') : '—'; }
+        else { var x = M1.readBox(g.img, g.boxes[k], k, TEMPL[k], theta); health[k] = x.n ? (x.d < 80 ? 2 : 1) : 0; lastRead[k] = x.s || '—'; }
       });
       drawOverlay();
     } else if (scr === 'main' && engine) {
       if (engine.mode !== 'done') {
         var before = engine.mode;
-        engine.feed(nowV(), g.img, g.boxes); engine.adapt();
+        engine.feed(nowV(), g.img, g.boxes, theta); engine.adapt(); maybeTrack();
         Object.keys(engine.health).forEach(function (k) { health[k] = engine.health[k] ? 2 : 0; });
         if (before === 'wait' && engine.mode === 'run') { beep(2); toast('투입 감지 — 기록 시작'); }
         if (engine.mode === 'done' && before !== 'done') finish();
@@ -669,7 +899,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     if (inAlign && ghostImg && ghost && $('ghost-on').checked) { octx.globalAlpha = 0.35; octx.drawImage(ghostImg, R.x + ghost.x0 * R.w, R.y + ghost.y0 * R.h, (ghost.x1 - ghost.x0) * R.w, (ghost.y1 - ghost.y0) * R.h); octx.globalAlpha = 1; }
     Object.keys(boxes).forEach(function (k) {
       var b = boxes[k], x = R.x + b[0] * R.w, y = R.y + b[1] * R.h, w = (b[2] - b[0]) * R.w, h = (b[3] - b[1]) * R.h, st = health[k];
-      octx.lineWidth = inAlign ? 3 : 2; octx.strokeStyle = st === 2 ? '#22c55e' : st === 1 ? '#eab308' : '#ef4444'; octx.strokeRect(x, y, w, h);
+      octx.lineWidth = inAlign ? 3 : 2; octx.strokeStyle = st === 2 ? '#22c55e' : st === 1 ? '#eab308' : '#ef4444';
+      octx.save(); octx.translate(x + w / 2, y + h / 2); octx.rotate(theta); octx.strokeRect(-w / 2, -h / 2, w, h); octx.restore();
       if (inAlign) {
         octx.fillStyle = 'rgba(0,0,0,.65)'; octx.fillRect(x, y - 22, Math.max(w, 90), 20);
         octx.fillStyle = '#fff'; octx.font = '600 13px -apple-system,sans-serif'; octx.fillText(LABEL[k] + '  ' + (lastRead[k] || ''), x + 4, y - 7);
@@ -686,7 +917,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var drag = null;
     function pt(e) { var r = overlay.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
     overlay.addEventListener('pointerdown', function (e) {
-      if (document.body.getAttribute('data-screen') !== 'align') return;
+      if (document.body.getAttribute('data-screen') !== 'align' || tapMode) return;
       var p = pt(e), R = stageRect(), hit = null;
       Object.keys(boxes).forEach(function (k) {
         var b = boxes[k], x = R.x + b[0] * R.w, y = R.y + b[1] * R.h, w = (b[2] - b[0]) * R.w, h = (b[3] - b[1]) * R.h;
@@ -724,14 +955,14 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var lines = [], rd = {};
     Object.keys(g.boxes).forEach(function (k) {
       var b = g.boxes[k], txt;
-      if (k === 'timer') { var r = M1.readTimer(g.img, b, TEMPL.timer); txt = r ? r.s + ' d' + Math.round(r.d) : '실패'; }
-      else { var q = M1.readField(g.img, b, k, TEMPL[k]); txt = (q.s || '실패') + ' n' + q.n + ' d' + Math.round(q.d); }
+      if (k === 'timer') { var r = M1.readBox(g.img, b, 'timer', TEMPL.timer, theta); txt = r ? r.s + ' d' + Math.round(r.d) : '실패'; }
+      else { var q = M1.readBox(g.img, b, k, TEMPL[k], theta); txt = (q.s || '실패') + ' n' + q.n + ' d' + Math.round(q.d); }
       rd[k] = txt; x.strokeStyle = COLOR[k]; x.lineWidth = 2; x.strokeRect(b[0] * sc, b[1] * sc, (b[2] - b[0]) * sc, (b[3] - b[1]) * sc);
       x.fillStyle = COLOR[k]; x.font = 'bold 15px sans-serif'; x.fillText(LABEL[k] + ' ' + txt, b[0] * sc, Math.max(14, b[1] * sc - 4));
     });
     lines.push('읽은 값: ' + Object.keys(rd).map(function (k) { return LABEL[k] + '=' + rd[k]; }).join(' | '));
     lines.push('영상 ' + vidW() + 'x' + vidH() + ' · 처리 ' + fps.toFixed(1) + '장/초 · 화면 ' + document.body.getAttribute('data-screen') + ' · 상태 ' + (engine ? engine.mode + ' ' + (engine.endReason || '') : '-'));
-    lines.push('칸(정규화) ' + JSON.stringify(boxes));
+    lines.push('칸(정규화) ' + JSON.stringify(boxes) + ' · 기울기 ' + (theta * 180 / Math.PI).toFixed(1) + '°');
     lines.push(new Date().toLocaleString('ko-KR') + ' · ' + navigator.userAgent.slice(0, 90));
     x.fillStyle = '#e2e8f0'; x.font = '13px sans-serif';
     lines.forEach(function (L, i) { x.fillText(L.slice(0, 110), 10, h * sc + 24 + i * 22); });
@@ -740,13 +971,60 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     catch (e) { toast('저장 실패: ' + e.message); }
   }
 
+
+  /* ---------- 자동 맞추기 · 따라가기 ---------- */
+  var REFPX = (function () { var o = {}; Object.keys(DEF_BOX).forEach(function (k) { var b = DEF_BOX[k]; o[k] = [b[0] * 720, b[1] * 1280, b[2] * 720, b[3] * 1280]; }); return o; })();
+  var full = document.createElement('canvas'), fctx = full.getContext('2d'), tapMode = false;
+  function fullFrame() {
+    var W = vidW(), H = vidH(); if (!W) return null;
+    if (full.width !== W || full.height !== H) { full.width = W; full.height = H; }
+    fctx.drawImage(video, 0, 0, W, H); var id = fctx.getImageData(0, 0, W, H);
+    return { data: id.data, width: W, height: H, ch: 4 };
+  }
+  function runAuto(px, py) {                                  // px,py: 영상 픽셀 좌표의 BT 위치
+    var img = fullFrame(); if (!img) return;
+    var r = M1.autoAlign(img, px, py, REFPX, TEMPL);
+    if (!r) { toast('BT 숫자를 찾지 못했습니다 — BT 숫자 한가운데를 다시 탭해 주세요'); return false; }
+    var W = img.width, H = img.height;
+    Object.keys(r.boxes).forEach(function (k) { var b = r.boxes[k]; boxes[k] = [b[0] / W, b[1] / H, b[2] / W, b[3] / H]; });
+    theta = r.theta; save('boxes', boxes); save('theta', theta); drawOverlay();
+    var deg = theta * 180 / Math.PI;
+    toast('칸을 맞췄습니다 (' + r.found.length + '칸에서 찾음' + (Math.abs(deg) > 0.5 ? ', 기울기 ' + deg.toFixed(1) + '° 보정' : '') + ')');
+    return true;
+  }
+  overlay.addEventListener('pointerdown', function (e) {
+    if (!tapMode || document.body.getAttribute('data-screen') !== 'align') return;
+    e.stopImmediatePropagation(); e.preventDefault(); tapMode = false; $('btn-auto').className = '';
+    var r = overlay.getBoundingClientRect(), R = stageRect(), x = (e.clientX - r.left - R.x) / R.w, y = (e.clientY - r.top - R.y) / R.h;
+    if (x < 0 || y < 0 || x > 1 || y > 1) { toast('영상 안을 탭해 주세요'); return; }
+    runAuto(x * vidW(), y * vidH());
+  }, true);
+  var lastTrack = 0, trackInfo = '';
+  function maybeTrack() {
+    if (!settings.track || !engine || engine.mode === 'done') return;
+    var t = performance.now(); if (t - lastTrack < 3000) return; lastTrack = t;
+    var g = grab(); if (!g) return;
+    var W = vidW(), H = vidH(), mg = 80, X0 = Math.max(0, g.X0 - mg), Y0 = Math.max(0, g.Y0 - mg), X1 = Math.min(W, g.X0 + g.img.width + mg), Y1 = Math.min(H, g.Y0 + g.img.height + mg);
+    if (full.width !== X1 - X0 || full.height !== Y1 - Y0) { full.width = X1 - X0; full.height = Y1 - Y0; }
+    fctx.drawImage(video, X0, Y0, X1 - X0, Y1 - Y0, 0, 0, X1 - X0, Y1 - Y0);
+    var id = fctx.getImageData(0, 0, X1 - X0, Y1 - Y0), img = { data: id.data, width: X1 - X0, height: Y1 - Y0, ch: 4 }, bx = {};
+    Object.keys(boxes).forEach(function (k) { var b = boxes[k]; bx[k] = [b[0] * W - X0, b[1] * H - Y0, b[2] * W - X0, b[3] * H - Y0]; });
+    var s = M1.trackShift(img, bx, TEMPL, theta); if (!s) return;
+    var hgt = bx.bt[3] - bx.bt[1], mag = Math.sqrt(s.dx * s.dx + s.dy * s.dy);
+    if (mag < 1.5 || mag > hgt * 0.8) return;                 // 너무 작으면 무시, 너무 크면(손 등) 믿지 않음
+    var fx = s.dx * 0.7 / W, fy = s.dy * 0.7 / H;
+    Object.keys(boxes).forEach(function (k) { var b = boxes[k]; boxes[k] = [b[0] + fx, b[1] + fy, b[2] + fx, b[3] + fy]; });
+    save('boxes', boxes); trackInfo = '칸 따라감 ' + Math.round(s.dx) + ',' + Math.round(s.dy) + 'px';
+  }
+
   /* ---------- 숫자 익히기 ---------- */
   function learn() {
     var g = grab(); if (!g) return;
     var inputs = { bt: $('lrn-bt').value.trim(), at: $('lrn-at').value.trim(), timer: $('lrn-timer').value.replace(/\D/g, '') }, msg = [];
     Object.keys(inputs).forEach(function (f) {
       var txt = inputs[f]; if (!txt) return;
-      var gs = M1.glyphs(g.img, g.boxes[f], f).filter(function (z) { return z.kind === 'd'; }), ds = txt.replace(/\D/g, '').split('');
+      var src2 = theta && Math.abs(theta) > 0.005 ? M1.rotCrop(g.img, g.boxes[f], theta) : g.img, bb2 = src2 === g.img ? g.boxes[f] : [0, 0, src2.width, src2.height];
+      var gs = M1.glyphs(src2, bb2, f).filter(function (z) { return z.kind === 'd'; }), ds = txt.replace(/\D/g, '').split('');
       if (f === 'timer' && ds.length !== 6) { msg.push('타이머는 6자리로 입력해 주세요 (예: 000000)'); return; }
       if (gs.length !== ds.length) { msg.push(LABEL[f] + ': 숫자 ' + ds.length + '개를 입력했는데 화면에서 ' + gs.length + '개를 찾았습니다'); return; }
       ds.forEach(function (d, i) { var t = TEMPL[f][d] || new Float32Array(gs[i].g.length); for (var j = 0; j < t.length; j++) t[j] = t[j] * 0.5 + gs[i].g[j] * 0.5; TEMPL[f][d] = t; });
@@ -754,6 +1032,78 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       msg.push(LABEL[f] + ' 익힘');
     });
     save('T', encodeT(TEMPL)); toast(msg.join(' · ') || '입력한 값이 없습니다');
+  }
+
+
+  /* ---------- 배경 곡선: 지난 배치의 BT를 실시간과 같은 방식으로 다시 계산해 흐리게 깔기 ---------- */
+  var BG = null;
+  function buildBg(src) {                                   // src: {name, bt[], at[], power[[t,p]], ev{tp,fc,drop}}
+    var e = new M1Engine({ T: TEMPL, rorWin: settings.rorWin === 'fast' ? 'fast' : (+settings.rorWin || 30) });
+    e.mode = 'done'; e.t0 = 0; var last = 0;
+    for (var s = 0; s < src.bt.length; s++) { var b = src.bt[s], a = src.at ? src.at[s] : null; if (b === null && a === null) continue; e.sec[s] = { bt: b, at: a === undefined ? null : a, ror: null }; last = s; }
+    e.lastSec = last; e.events.tp = src.ev && src.ev.tp !== null && src.ev.tp !== undefined ? src.ev.tp : null;
+    if (e.events.tp === null) { var lo = null; for (s = 5; s < Math.min(120, last); s++) { var x = e.bt(s); if (x !== null && (lo === null || x < lo.v)) lo = { s: s, v: x }; } e.events.tp = lo ? lo.s : 40; }
+    var out = { name: src.name, len: last, bt: [], at: [], ror: [], power: src.power || [], ev: src.ev || {} }, r0 = e.events.tp + 40;
+    for (s = 0; s <= last; s++) { out.bt.push(e.bt(s)); out.at.push(e.at(s)); out.ror.push(s >= r0 ? e.ror(s) : null); }
+    return out;
+  }
+  function bgSource() {
+    var k = settings.bg; if (!k) return null;
+    if (k === 'file') return load('bgFile', null);
+    var i = +k; return PRESETS[i] || null;
+  }
+  function refreshBg() { var src = bgSource(); BG = src ? buildBg(src) : null; var lab = $('bg-label'); if (lab) lab.textContent = BG ? BG.name : '없음'; }
+  function parseLogCsv(txt, fname) {
+    var bt = [], at = [], power = [], ev = { tp: null, fc: null, drop: null }, name = fname.replace(/\.csv$/i, ''), sec = null;
+    txt.replace(/^\ufeff/, '').split(/\r?\n/).forEach(function (line) {
+      var c = line.split(','); if (!line.trim()) { sec = null; return; }
+      if (c[0] === 'time_s') { sec = 'd'; return; } if (c[0] === 'power_changes') { sec = 'p'; return; } if (c[0] === 'event') { sec = 'e'; return; } if (c[0] === 'batch') { sec = 'b'; return; }
+      if (sec === 'd' && /^\d+$/.test(c[0])) { var s = +c[0]; bt[s] = c[2] !== '' && c[2] !== undefined ? +c[2] : null; at[s] = c[3] !== '' && c[3] !== undefined ? +c[3] : null; }
+      else if (sec === 'p' && c.length >= 4) power.push([+c[1], +c[3]]);
+      else if (sec === 'e') { var key = { 'TP': 'tp', '1차 팝': 'fc', '배출': 'drop' }[c[0]]; if (key) ev[key] = +c[1]; }
+      else if (sec === 'b' && c[0] === 'name' && c[1]) name = c[1];
+    });
+    for (var i = 0; i < bt.length; i++) { if (bt[i] === undefined) bt[i] = null; if (at[i] === undefined) at[i] = null; }
+    return { name: name, bt: bt, at: at, power: power, ev: ev };
+  }
+  function drawBg(X, Yt, Yr, L, T, pw, phh) {
+    if (!BG || !settings.bgOn) return;
+    cctx.save(); cctx.beginPath(); cctx.rect(L, T, pw, phh); cctx.clip(); cctx.globalAlpha = 0.33;
+    function ln(arr, Y, col, w) { cctx.strokeStyle = col; cctx.lineWidth = w; cctx.beginPath(); var on = false; for (var s = 0; s < arr.length; s++) { var v = arr[s]; if (v === null || v === undefined) { on = false; continue; } if (!on) { cctx.moveTo(X(s), Y(v)); on = true; } else cctx.lineTo(X(s), Y(v)); } cctx.stroke(); }
+    ln(BG.at, Yt, '#38bdf8', 1.5); ln(BG.bt, Yt, '#ff5d8f', 4); ln(BG.ror, Yr, '#22c55e', 4);
+    cctx.globalAlpha = 0.5; cctx.fillStyle = '#e2e8f0'; cctx.font = '11px -apple-system,sans-serif';
+    cctx.globalAlpha = 0.35; cctx.strokeStyle = '#f59e0b'; cctx.lineWidth = 1; cctx.setLineDash([4, 4]);
+    BG.power.forEach(function (p) { if (p[0] <= 1) return; cctx.beginPath(); cctx.moveTo(X(p[0]), T); cctx.lineTo(X(p[0]), T + phh); cctx.stroke(); });
+    cctx.setLineDash([]); cctx.globalAlpha = 0.5;
+    if (BG.ev.fc) { cctx.strokeStyle = '#f43f5e'; cctx.lineWidth = 1; cctx.setLineDash([2, 4]); cctx.beginPath(); cctx.moveTo(X(BG.ev.fc), T); cctx.lineTo(X(BG.ev.fc), T + phh); cctx.stroke(); cctx.setLineDash([]); }
+    cctx.globalAlpha = 1; cctx.fillStyle = '#cbd5e1'; cctx.font = '600 13px -apple-system,sans-serif'; cctx.fillText('배경: ' + BG.name + (BG.ev.fc ? ' · 팝 ' + M1Engine.fmt(BG.ev.fc) : ''), L + 40, T + 18);
+    cctx.restore();
+  }
+
+
+  /* 화력 띠: 그래프 아래, 배경 배치(흐림)와 지금 배치(진함)의 화력 계단 */
+  function drawPowerStrip(X, L, pw, y0, y1, E) {
+    var Yp = function (p) { return y1 - (y1 - y0) * Math.max(0, Math.min(100, p)) / 100; };
+    cctx.save();
+    cctx.fillStyle = 'rgba(148,163,184,.08)'; cctx.fillRect(L, y0, pw, y1 - y0);
+    cctx.strokeStyle = 'rgba(148,163,184,.25)'; cctx.lineWidth = 1; cctx.strokeRect(L, y0, pw, y1 - y0);
+    cctx.fillStyle = '#94a3b8'; cctx.font = '11px -apple-system,sans-serif'; cctx.fillText('화력', 6, (y0 + y1) / 2 + 4);
+    function stair(list, endT, col, wid, alpha, labelUp) {
+      if (!list || !list.length) return;
+      cctx.globalAlpha = alpha; cctx.strokeStyle = col; cctx.lineWidth = wid; cctx.beginPath();
+      for (var i = 0; i < list.length; i++) {
+        var t = Math.max(0, list[i][0]), p = list[i][1], tn = i + 1 < list.length ? list[i + 1][0] : endT;
+        if (i === 0) cctx.moveTo(X(t), Yp(p)); else cctx.lineTo(X(t), Yp(p));
+        cctx.lineTo(X(Math.max(t, tn)), Yp(p));
+      }
+      cctx.stroke();
+      cctx.fillStyle = col; cctx.font = 'bold 11px -apple-system,sans-serif';
+      list.forEach(function (q, i) { var x = X(Math.max(0, q[0])) + 3, y = labelUp ? Yp(q[1]) - 3 : Yp(q[1]) + 12; if (i === 0 || q[1] !== list[i - 1][1]) cctx.fillText(q[1], x, Math.max(y0 + 10, Math.min(y1 - 2, y))); });
+      cctx.globalAlpha = 1;
+    }
+    if (BG && settings.bgOn && BG.power.length) stair(BG.power, BG.ev.drop || BG.len, '#f59e0b', 3, 0.45, false);
+    if (E && E.mode !== 'wait') stair(E.power.map(function (p) { return [p.t, p.p]; }), E.lastSec, '#fbbf24', 2.5, 1, true);
+    cctx.restore();
   }
 
   /* ---------- 기록 화면 ---------- */
@@ -792,11 +1142,11 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var last = E.raw.length ? E.raw[E.raw.length - 1] : {};
     var bt = E.mode === 'run' || E.mode === 'done' ? E.bt(s) : last.bt, at = E.mode !== 'wait' ? E.at(s) : last.at;
     $('v-bt').textContent = fix(bt, 0); $('v-at').textContent = fix(at, 0);
-    $('v-ror').textContent = E.mode !== 'wait' && E.events.tp !== null && s >= E.events.tp + 20 ? fix(E.ror(s)) : '—';
+    $('v-ror').textContent = E.mode !== 'wait' && E.events.tp !== null && s >= E.events.tp + 40 ? fix(E.ror(s)) : '—';
     var rd = E.mode !== 'wait' ? E.rorDisp(s) : last.ror, s60 = E.mode !== 'wait' ? E.sum60(s) : null;
     $('v-disp').textContent = (rd === null || rd === undefined ? '—' : rd) + '  /  ' + (s60 === null ? '—' : s60);
     ['bt', 'at', 'ror', 'timer'].forEach(function (k) { $('h-' + k).className = 'dot ' + (health[k] === 2 ? 'g' : 'r'); });
-    $('fps').textContent = fps.toFixed(1) + '장/초'; $('rw').textContent = E.cfg.rorWin === 'fast' ? '빠름' : (E.cfg.rorWin || 30) + '초';
+    $('fps').textContent = fps.toFixed(1) + '장/초' + (trackInfo ? ' · ' + trackInfo : ''); $('rw').textContent = E.cfg.rorWin === 'fast' ? '빠름' : (E.cfg.rorWin || 30) + '초';
     var ph = E.predict(0), pc = E.predict(-10), tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + 190) : '—';
     $('p-hold').innerHTML = ph ? '30초 <b>' + fix(ph.r30) + '</b> · 60초 <b>' + fix(ph.r60) + '</b> · 팝 <b>' + (ph.passed ? '온도 지남' : ph.fc ? M1Engine.fmt(ph.fc) : '—') + '</b>' : '<span class="mute">예측은 1:30 이후, 1차 팝 전까지</span>';
     $('p-cut').innerHTML = pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.passed ? '온도 지남' : pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
@@ -806,19 +1156,21 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   }
 
   function drawChart(ph, pc) {
-    var E = engine, w = chart.clientWidth, h = chart.clientHeight, L = 40, Rm = 36, T = 10, B = 22, pw = w - L - Rm, phh = h - T - B;
+    var E = engine, w = chart.clientWidth, h = chart.clientHeight, L = 40, Rm = 36, T = 10, SB = 46, B = 22 + SB, pw = w - L - Rm, phh = h - T - B;
     cctx.clearRect(0, 0, w, h);
-    var tmax = Math.max(480, Math.ceil((Math.max(E.lastSec, 0) + 90) / 60) * 60), X = function (t) { return L + pw * t / tmax; };
+    var bgLen = BG && settings.bgOn ? BG.len : 0, tmax = Math.max(480, Math.ceil((Math.max(E.lastSec, 0, bgLen - 60) + 90) / 60) * 60), X = function (t) { return L + pw * t / tmax; };
     var Yt = function (v) { return T + phh * (1 - (v - 50) / 200); }, Yr = function (v) { return T + phh * (1 - v / 25); };
     cctx.strokeStyle = 'rgba(148,163,184,.25)'; cctx.lineWidth = 1; cctx.fillStyle = '#94a3b8'; cctx.font = '11px -apple-system,sans-serif';
-    for (var m = 0; m <= tmax; m += 60) { cctx.beginPath(); cctx.moveTo(X(m), T); cctx.lineTo(X(m), T + phh); cctx.stroke(); cctx.fillText(m / 60 + '분', X(m) - 8, h - 6); }
+    for (var m = 0; m <= tmax; m += 60) { cctx.beginPath(); cctx.moveTo(X(m), T); cctx.lineTo(X(m), T + phh); cctx.stroke(); cctx.fillText(m / 60 + '분', X(m) - 8, T + phh + 15); }
     for (var v = 50; v <= 250; v += 50) { cctx.beginPath(); cctx.moveTo(L, Yt(v)); cctx.lineTo(L + pw, Yt(v)); cctx.stroke(); cctx.fillText(v, 8, Yt(v) + 4); }
     for (var r = 0; r <= 25; r += 5) cctx.fillText(r, L + pw + 8, Yr(r) + 4);
+    drawBg(X, Yt, Yr, L, T, pw, phh);
+    drawPowerStrip(X, L, pw, T + phh + 22, T + phh + 22 + SB - 8, E);
     if (E.mode === 'wait') return;
     function line(fn, Y, col, wid, dash) { cctx.strokeStyle = col; cctx.lineWidth = wid; cctx.setLineDash(dash || []); cctx.beginPath(); var on = false; for (var s = 0; s <= E.lastSec; s++) { var y = fn(s); if (y === null || y === undefined) { on = false; continue; } if (!on) { cctx.moveTo(X(s), Y(y)); on = true; } else cctx.lineTo(X(s), Y(y)); } cctx.stroke(); cctx.setLineDash([]); }
     line(function (s) { return E.at(s); }, Yt, '#38bdf8', 1.5);
     line(function (s) { return E.bt(s); }, Yt, '#ff5d8f', 2.5);
-    var r0 = E.events.tp !== null ? E.events.tp + 20 : 1e9;
+    var r0 = E.events.tp !== null ? E.events.tp + 40 : 1e9;
     cctx.save(); cctx.beginPath(); cctx.rect(L, T, pw, phh); cctx.clip();
     line(function (s) { return s >= r0 ? E.ror(s) : null; }, Yr, '#22c55e', 2.5);
     var fcT = E.cfg.fcTemp || 183;
@@ -839,7 +1191,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
         cctx.font = 'bold 13px -apple-system,sans-serif'; cctx.fillText(q[3] + ' ' + M1Engine.fmt(P.fc), fx + 7, fy + (qi ? 16 : -8)); cctx.font = '11px -apple-system,sans-serif'; }
     });
     cctx.restore();
-    E.power.forEach(function (p, i) { if (!i && p.t === 0) return; cctx.fillStyle = '#e2e8f0'; cctx.fillRect(X(p.t) - 1, T, 2, 8); cctx.fillText(p.p, X(p.t) + 3, T + 9); });
+
     ['fc', 'drop'].forEach(function (k) { var s = E.events[k]; if (s === null || s === undefined) return; cctx.strokeStyle = k === 'fc' ? '#f43f5e' : '#e2e8f0'; cctx.setLineDash([3, 3]); cctx.beginPath(); cctx.moveTo(X(s), T); cctx.lineTo(X(s), T + phh); cctx.stroke(); cctx.setLineDash([]); });
   }
 
@@ -872,7 +1224,9 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   function bind(id, fn) { $(id).addEventListener('click', function (e) { unlockAudio(); fn(e); }); }
   bind('btn-cam', startCamera);
   $('file').addEventListener('change', function (e) { if (e.target.files[0]) startFile(e.target.files[0]); });
-  bind('btn-default', function () { boxes = JSON.parse(JSON.stringify(DEF_BOX)); save('boxes', boxes); drawOverlay(); });
+  bind('btn-default', function () { boxes = JSON.parse(JSON.stringify(DEF_BOX)); theta = 0; save('boxes', boxes); save('theta', 0); drawOverlay(); });
+  bind('btn-auto', function () { tapMode = !tapMode; $('btn-auto').className = tapMode ? 'spd on' : ''; if (tapMode) toast('BT 숫자를 한 번 탭하세요'); });
+  bind('btn-refind', function () { var b = boxes.bt; runAuto((b[0] + b[2]) / 2 * vidW(), (b[1] + b[3]) / 2 * vidH()); });
   bind('btn-learn', function () { $('learn').style.display = $('learn').style.display === 'none' ? '' : 'none'; });
   bind('btn-learn-go', learn);
   bind('btn-ready', function () {
@@ -899,10 +1253,33 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   video.addEventListener('ended', function () { if (engine && engine.mode !== 'done') { engine.stop(); if (engine.mode === 'done') finish(); } });
   Array.prototype.forEach.call(document.querySelectorAll('.pw'), function (b) { b.addEventListener('click', function () { setPower(+b.getAttribute('data-p')); }); });
   Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (b) { b.addEventListener('click', function () { speed = +b.getAttribute('data-s'); video.playbackRate = speed; Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (x) { x.className = 'spd' + (x === b ? ' on' : ''); }); }); });
-  ['fcTemp', 'startPower', 'name', 'green', 'size', 'rorWin'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = k === 'rorWin' ? (el.value === 'fast' ? 'fast' : +el.value) : (el.type === 'number' ? +el.value : el.value); save('settings', settings); if (k === 'rorWin' && engine) engine.cfg.rorWin = settings.rorWin; }); });
+  ['fcTemp', 'startPower', 'name', 'green', 'size', 'rorWin'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = k === 'rorWin' ? (el.value === 'fast' ? 'fast' : +el.value) : (el.type === 'number' ? +el.value : el.value); save('settings', settings); if (k === 'rorWin') { if (engine) engine.cfg.rorWin = settings.rorWin; refreshBg(); } }); });
+  $('set-track').checked = !!settings.track; $('set-track').addEventListener('change', function () { settings.track = $('set-track').checked; save('settings', settings); });
   $('set-alerts').checked = !!settings.alerts; $('set-alerts').addEventListener('change', function () { settings.alerts = $('set-alerts').checked; save('settings', settings); });
   if (load('lastCsv', '')) $('btn-last').style.display = '';
   bind('btn-last', function () { var ta = $('csv-box-home'); ta.value = load('lastCsv', ''); ta.style.display = ''; ta.select(); });
+
+  (function () {
+    var sel = $('bg-sel'); PRESETS.forEach(function (p, i) { var o = document.createElement('option'); o.value = String(i); o.textContent = p.name; sel.appendChild(o); });
+    var f = load('bgFile', null); if (f) { var o2 = document.createElement('option'); o2.value = 'file'; o2.textContent = '불러온 파일: ' + f.name; o2.id = 'bg-file-opt'; sel.appendChild(o2); }
+    if (settings.bg === undefined) { settings.bg = '0'; settings.bgOn = true; save('settings', settings); }
+    sel.value = settings.bg || ''; refreshBg();
+    sel.addEventListener('change', function () { settings.bg = sel.value; if (sel.value) settings.bgOn = true; save('settings', settings); refreshBg(); renderBgBtn(); });
+    $('bg-file').addEventListener('change', function (e) {
+      var file = e.target.files[0]; if (!file) return; var rd = new FileReader();
+      rd.onload = function () {
+        var src = parseLogCsv(String(rd.result), file.name); var cnt = src.bt.filter(function (x) { return x !== null; }).length;
+        if (cnt < 60) { toast('BT 기록을 찾지 못했습니다 (로스팅 로그의 CSV인지 확인해 주세요)'); return; }
+        save('bgFile', src); var o = $('bg-file-opt'); if (!o) { o = document.createElement('option'); o.value = 'file'; o.id = 'bg-file-opt'; sel.appendChild(o); }
+        o.textContent = '불러온 파일: ' + src.name; sel.value = 'file'; settings.bg = 'file'; settings.bgOn = true; save('settings', settings); refreshBg(); renderBgBtn(); toast('배경으로 불러왔습니다: ' + src.name);
+      };
+      rd.readAsText(file);
+    });
+  })();
+  function renderBgBtn() { var b = $('btn-bg'); if (b) { b.textContent = '배경 ' + (BG && settings.bgOn ? '켬' : '끔'); b.className = BG && settings.bgOn ? 'spd on' : 'spd'; } }
+  bind('btn-bg', function () { if (!BG) { toast('처음 화면에서 배경 곡선을 고르세요'); return; } settings.bgOn = !settings.bgOn; save('settings', settings); renderBgBtn(); render(); });
+  renderBgBtn();
+  window.__m1test = { runAuto: function (x, y) { return runAuto(x, y); }, boxes: function () { return boxes; }, theta: function () { return theta; } };
   show('home');
 })();
 </script>
