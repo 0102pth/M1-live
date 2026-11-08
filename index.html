@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  M1 실시간 v2.10 (2026-11-08)
+  M1 실시간 v2.10.1 (2026-11-08)
   v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
   v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
   v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
@@ -16,6 +16,8 @@
   v2.8.3 자체 점검: 보관함 중복 제거, '최근 배치'를 날짜로, 자동 저장 축소
   v2.9 정리·고도화: 배경 입력 통합, 알림 일원화, 안전장치·배출 목표, 그날 조건 기록, 구간 비율, 음성 안내
   v2.10 옐로잉 엔드(마이야르 시작) 하나로, 구간 비율 막대(건조·마이야르·DTR), 드라이브 자동 업로드
+  v2.10.1 구매 기록의 생두 목록을 보관함 파일로 받아 생두 목록에 미리 등록, 긴/짧은 생두 이름 짝짓기
+  v2.10.1 구매 기록의 생두 목록(.json) 불러오기, 생두 목록에 재고·판매처 노트
 -->
 
 <html lang="ko"><head>
@@ -75,7 +77,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
 <div id="scr-home" class="scr">
-  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.10</span></h1>
+  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.10.1</span></h1>
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
@@ -111,7 +113,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   <div class="card">
     <b>배경 곡선</b> <span class="mute" style="font-size:13px">— 지난 배치를 실시간 화면과 같은 방식으로 다시 그려 흐리게 깝니다</span><br>
     <label>기준 배치 <select id="bg-sel" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="">없음</option></select></label>
-    <label><span class="mute">내 배치 보관함 채우기 (로거가 드라이브에 쓴 보관함 .json 또는 CSV 여러 개):</span> <input id="lib-files" type="file" multiple accept=".csv,.json,text/csv,application/json" style="width:220px"></label>
+    <label><span class="mute">보관함·생두 목록 채우기 (로거 보관함 .json, 생두 목록 .json, CSV 여러 개):</span> <input id="lib-files" type="file" multiple accept=".csv,.json,text/csv,application/json" style="width:220px"></label>
     <label>겹치는 기준 <select id="set-bgAlign" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="150">BT 맞춤 (150℃ 도달 시각, 그 전엔 점진)</option><option value="charge">투입 시각</option></select></label>
     <div class="mute" style="font-size:13px">지금: <span id="bg-label">없음</span></div>
   </div>
@@ -1383,10 +1385,16 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var it = libFromCsv(csvText(), settings.name || engine.named || defName(), { id: engine.libId, rating: engine.rating || 0, date: today() });
     if (it) { it.green = settings.green || it.green; libPut(it); }
   }
-  function beanOf(name) { return (load('beans', {}))[name] || null; }
+  function bnorm(s) { return String(s || '').replace(/\s+/g, '').replace(/[-_·()]/g, '').toLowerCase(); }
+  function sameBean(a, b) { var x = bnorm(a), y = bnorm(b); if (!x || !y) return false; if (x === y) return true; var s = x.length < y.length ? x : y, l = s === x ? y : x; return s.length >= 4 && l.indexOf(s) >= 0; }   // '케냐 티티' ↔ '케냐 티티 풀리 워시드'
+  function beanOf(name) { var B = load('beans', {}); if (B[name]) return B[name]; var k = Object.keys(B).filter(function (n) { return sameBean(n, name); }).sort(function (p, q) { return q.length - p.length; })[0]; return k ? B[k] : null; }
   function fillBeanList() {
-    var dl = $('bean-list'); if (!dl) return; var seen = {}, html = '';
-    libAll().concat(Object.keys(load('beans', {})).map(function (k) { return { green: k }; })).forEach(function (x) { if (x.green && !seen[x.green]) { seen[x.green] = 1; html += '<option value="' + x.green.replace(/"/g, '&quot;') + '">'; } });
+    var dl = $('bean-list'); if (!dl) return; var seen = {}, html = '', B = load('beans', {}), esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); };
+    var cat = Object.keys(B).filter(function (k) { return B[k].no; }).sort(function (p, q) { var sp = B[p].stock === '0g', sq = B[q].stock === '0g'; return sp - sq || (B[q].no - B[p].no); });   // 구매 기록 생두: 재고 있는 것·최근 것 먼저
+    cat.concat(libAll().map(function (x) { return x.green; })).concat(Object.keys(B)).forEach(function (g) {
+      if (!g || seen[g]) return; seen[g] = 1; var b = B[g] || {};
+      html += '<option value="' + esc(g) + '"' + (b.stock ? ' label="' + esc(g + ' · 재고 ' + b.stock) + '"' : '') + '>';
+    });
     dl.innerHTML = html;
   }
   function fillLibOptions() {
@@ -1398,7 +1406,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   }
   function onBeanChosen() {                                     // 같은 생두를 고르면: 평균 팝 온도, 가장 좋은(없으면 최근) 배치를 기준으로, 생두 정보
     var name = $('set-green').value.trim(); settings.green = name; if (!name) return;   // 칸 값을 직접(설정 저장보다 먼저 불릴 수 있음)
-    var mine = libAll().filter(function (x) { return x.green === name; }), msg = [];
+    var mine = libAll().filter(function (x) { return x.green && sameBean(x.green, name); }), msg = [];
     var fcs = mine.map(function (x) { return x.fcBT; }).filter(function (x) { return x !== null && x !== undefined; });
     if (fcs.length) { var m = Math.round(fcs.reduce(function (p, q) { return p + q; }, 0) / fcs.length); settings.fcTemp = m; $('set-fcTemp').value = m; msg.push('팝 평균 ' + m + '℃ (' + fcs.length + '배치)'); }
     if (mine.length) {
@@ -1408,7 +1416,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       msg.push('기준 배치 ' + best.name + (best.rating ? ' ★' + best.rating : ''));
     }
     var b = beanOf(name); ['origin', 'variety', 'process', 'alt', 'moist', 'dens'].forEach(function (k) { $('bean-' + k).value = b && b[k] !== undefined ? b[k] : ''; });
-    $('bean-sum').textContent = beanNote() || '';
+    var bx = beanOf(name) || {}; $('bean-sum').textContent = [beanNote(), bx.stock ? '재고 ' + bx.stock : '', bx.cupNote ? '판매처 노트: ' + bx.cupNote : ''].filter(Boolean).join(' · ');
     save('settings', settings);
     toast(mine.length ? name + ': ' + msg.join(' · ') : name + ': 처음 볶는 생두입니다');
   }
@@ -1721,7 +1729,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     });
   });
   $('lib-files').addEventListener('change', function (e) {
-    var fs = Array.prototype.slice.call(e.target.files || []), n = 0, bad = 0, left = fs.length, lastOne = null;
+    var fs = Array.prototype.slice.call(e.target.files || []), n = 0, bad = 0, left = fs.length, lastOne = null, beansAdded = 0;
     if (!left) return;
     fs.forEach(function (file) {
       var rd = new FileReader();
@@ -1730,6 +1738,15 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
         if (/\.json$/i.test(file.name)) {                     // 로거가 드라이브에 써 준 보관함 파일
           try {
             var J = JSON.parse(txt), B = load('beans', {}), L = libAll(), byId = {}, names = {};
+            if (J.beans && J.beans.length) {                    // 구매 기록에서 만든 생두 목록: 비어 있는 칸만 채우고, 재고·판매처 노트 같은 구매 기록 값은 새로 고침
+              J.beans.forEach(function (b) {
+                if (!b.name) return; var s0 = B[b.name] || {};
+                ['origin', 'variety', 'process', 'alt', 'moist', 'dens'].forEach(function (k) { if (b[k] && !s0[k]) s0[k] = b[k]; });
+                ['stock', 'used', 'seller', 'cupNote', 'bought', 'no', 'fullName', 'crop'].forEach(function (k) { if (b[k] !== undefined) s0[k] = b[k]; });
+                B[b.name] = s0; beansAdded++;
+              });
+              save('beans', B); fillBeanList();
+            }
             (J.batches || []).forEach(function (b) { if (b.name) names[b.name] = 1; });
             L = L.filter(function (x) { return !(names[x.name] && x.id.charAt(0) !== 'L'); });   // 로거가 기준: 앱에서 만든 같은 이름 배치는 로거 것으로 교체(중복 방지)
             L.forEach(function (x, i) { byId[x.id] = i; });
@@ -1742,7 +1759,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
           } catch (e) { bad++; }
         } else { var it = libFromCsv(txt, file.name.replace(/\.csv$/i, '')); if (it) { var L2 = libAll().filter(function (x) { return x.name !== it.name; }); L2.push(it); libSave(L2); fillBeanList(); fillLibOptions(); n++; lastOne = it; } else bad++; }
         if (--left === 0) { if (fs.length === 1 && lastOne) { settings.bg = 'lib:' + lastOne.id; settings.bgOn = true; save('settings', settings); $('bg-sel').value = settings.bg; refreshBg(); renderBgBtn(); }   // CSV 하나면 바로 기준 배치로
-          toast('보관함에 ' + n + '개 넣었습니다' + (bad ? ' (' + bad + '개는 읽지 못함)' : '') + (fs.length === 1 && lastOne ? ' · 기준 배치로 선택' : '')); }
+          toast('보관함에 ' + n + '개' + (beansAdded ? ' · 생두 목록 ' + beansAdded + '종' : '') + ' 넣었습니다' + (bad ? ' (' + bad + '개는 읽지 못함)' : '') + (fs.length === 1 && lastOne ? ' · 기준 배치로 선택' : '')); }
       };
       rd.readAsText(file);
     });
