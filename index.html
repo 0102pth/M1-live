@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  M1 실시간 v2.8.1 (2026-11-08)
+  M1 실시간 v2.10 (2026-11-08)
   v1.0 첫 완성 · v1.1 진단 사진·틀 재학습 · v1.2 새 로스팅/종료 동작 · v1.3 RoR 구간 설정
   v1.4 빠른 RoR·BT 예측선 · v1.5 배경 곡선 · v1.6 자동 맞추기·기울기 보정·따라가기 · v1.7 화력 띠
   v2.0 제미나이 1차 반영 · v2.1 제미나이 2차 반영 · v2.2 제미나이 3차 반영
@@ -12,6 +12,10 @@
   v2.7 재현 코파일럿(BT 기준 화력 알림·기준 대비 속도), 내 배치 보관함·별점, 같은 생두 자동 불러오기, 생두 정보
   v2.8 로거 통일·드라이브 연동: 날짜_생두 이름, 의도·그날 순번·생두 정보·별점을 CSV 칸으로, 로거 보관함(.json) 불러오기
   v2.8.1 로스팅 로그 바로 열기 버튼
+  v2.8.2 배경 선택값 유지, 투입 확인 중 녹화 재시작 방지, 고온 투입 TP 인식
+  v2.8.3 자체 점검: 보관함 중복 제거, '최근 배치'를 날짜로, 자동 저장 축소
+  v2.9 정리·고도화: 배경 입력 통합, 알림 일원화, 안전장치·배출 목표, 그날 조건 기록, 구간 비율, 음성 안내
+  v2.10 옐로잉 엔드(마이야르 시작) 하나로, 구간 비율 막대(건조·마이야르·DTR), 드라이브 자동 업로드
 -->
 
 <html lang="ko"><head>
@@ -71,7 +75,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
 <div id="stage"><video id="video" playsinline muted autoplay></video><canvas id="overlay"></canvas></div>
 
 <div id="scr-home" class="scr">
-  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.8.1</span></h1>
+  <h1>M1 실시간 <span class="mute" style="font-size:14px;font-weight:400">v2.10</span></h1>
   <div class="mute">패널을 카메라로 읽어 BT·AT·RoR을 실시간으로 기록합니다. 화면을 계속 켜 두려면 자동 잠금을 꺼 주세요.</div>
   <div class="card">
     <button id="btn-cam" class="big">카메라로 시작</button>
@@ -86,7 +90,7 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <label>투입량 <input id="set-size" type="number" style="width:80px">g</label>
     <label>RoR 계산 구간 <select id="set-rorWin" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="fast">빠름 (지연 약 6초, 기본)</option><option value="30">30초 (지연 약 15초)</option><option value="45">45초 (지연 약 22초)</option><option value="60">60초 (매끄러움, 지연 약 30초)</option></select></label><br>
     <label>배치 이름 <input id="set-name" style="width:200px" placeholder="비우면 날짜_생두"></label>
-    <label>생두 <input id="set-green" list="bean-list" style="width:240px" placeholder="지난 생두는 목록에서 고르기"></label><datalist id="bean-list"></datalist><br>
+    <label>생두 <input id="set-green" list="bean-list" style="width:240px" placeholder="지난 생두는 목록에서 고르기"></label><datalist id="bean-list"></datalist> <span id="bean-sum" class="mute" style="font-size:13px"></span><br>
     <label>이번 배치의 의도 <input id="set-intent" style="width:420px" placeholder="예: 단맛을 늘리려고 159→155℃에서 50으로 당김"></label><br>
     <details style="margin:6px 0"><summary class="mute" style="font-size:14px">생두 정보 (선택 — 생두별로 기억, CSV 메모에 남음)</summary>
       <label>원산지 <input id="bean-origin" style="width:120px"></label> <label>품종 <input id="bean-variety" style="width:120px"></label> <label>가공 <input id="bean-process" style="width:110px" placeholder="워시드 등"></label><br>
@@ -95,6 +99,11 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
     <label><input id="set-alerts" type="checkbox" style="width:auto"> 140·150·159·173℃ 알림</label>
     <label><input id="set-track" type="checkbox" style="width:auto"> 기록 중 칸 자동 따라가기</label>
     <label><input id="set-adapt" type="checkbox" style="width:auto"> 숫자 틀 자동 적응</label>
+    <div class="card" style="margin:8px 0;padding:10px"><b>드라이브 자동 업로드</b> <span class="mute" style="font-size:13px">— 기록이 끝나면 CSV를 M1/날짜 폴더에 바로 저장(영상은 공유 시트로)</span><br>
+      <label>업로드 주소 <input id="set-upUrl" style="width:360px" placeholder="https://script.google.com/macros/s/…/exec"></label> <label>비밀 키 <input id="set-upKey" style="width:140px"></label> <button id="btn-uptest">연결 시험</button>
+    </div>
+    <label><input id="set-voice" type="checkbox" style="width:auto"> 음성 안내 (화력·배출·경고를 읽어 줌)</label>
+    <label>배출 목표(기준 배치가 없을 때): 팝 + <input id="set-dropDbt" type="number" style="width:56px">℃ 또는 <input id="set-dropSec" type="number" style="width:60px">초</label><br>
     <label><input id="set-guide" type="checkbox" style="width:auto"> 기준 배치 재현 알림 (배경 배치의 화력 변경을 같은 BT에서 알려줌)</label>
     <label><input id="set-rec" type="checkbox" style="width:auto"> 카메라 영상도 녹화 (판독 개선용, 7분에 약 30MB)</label>
     <label>카메라 해상도 <select id="set-res" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="1080">1080p (숫자 더 선명, 기본)</option><option value="720">720p (기기가 느릴 때)</option></select></label>
@@ -102,7 +111,6 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   <div class="card">
     <b>배경 곡선</b> <span class="mute" style="font-size:13px">— 지난 배치를 실시간 화면과 같은 방식으로 다시 그려 흐리게 깝니다</span><br>
     <label>기준 배치 <select id="bg-sel" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="">없음</option></select></label>
-    <label><span class="mute">로그 CSV 불러오기:</span> <input id="bg-file" type="file" accept=".csv,text/csv" style="width:220px"></label>
     <label><span class="mute">내 배치 보관함 채우기 (로거가 드라이브에 쓴 보관함 .json 또는 CSV 여러 개):</span> <input id="lib-files" type="file" multiple accept=".csv,.json,text/csv,application/json" style="width:220px"></label>
     <label>겹치는 기준 <select id="set-bgAlign" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:8px"><option value="150">BT 맞춤 (150℃ 도달 시각, 그 전엔 점진)</option><option value="charge">투입 시각</option></select></label>
     <div class="mute" style="font-size:13px">지금: <span id="bg-label">없음</span></div>
@@ -149,18 +157,21 @@ body[data-screen=main] #stage{top:calc(env(safe-area-inset-top) + 10px);right:12
   <div id="pred">
     <div><span class="tag" style="color:#22c55e">유지</span><span id="p-hold"></span></div>
     <div><span class="tag" style="color:#f59e0b">−10</span><span id="p-cut"></span></div>
+    <div id="phase-bar" style="display:none;height:26px;border-radius:8px;overflow:hidden;margin:6px 0;font-size:12px;line-height:26px;color:#0b1220;font-weight:600;white-space:nowrap">
+      <div id="ph-dry" style="background:#86efac;padding:0 6px;overflow:hidden"></div><div id="ph-mai" style="background:#fbbf24;padding:0 6px;overflow:hidden"></div><div id="ph-dev" style="background:#c08457;padding:0 6px;overflow:hidden;color:#fff"></div>
+    </div>
     <div id="p-guide-row" style="display:none"><span class="tag" style="color:#a78bfa">재현</span><span id="p-guide"></span></div>
   </div>
   <div id="done-bar" style="display:none">
     <b id="done-msg" style="margin:0 8px">기록이 끝났습니다</b>
     <span id="done-w"><label>별점 <select id="rating" style="font:inherit;color:var(--ink);background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:6px"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label> <label>투입 <input id="in-g" inputmode="decimal" style="width:70px">g</label> <label>배출 <input id="out-g" inputmode="decimal" style="width:70px" placeholder="냉각 후">g</label> <b id="loss" style="margin-right:8px"></b></span>
-    <span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-rec-save" style="display:none;border-color:#ef4444"></button><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button><a href="https://claude.ai/artifact/W44mDTe3PXTnU636qeAvXz" target="_blank" rel="noopener" style="display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #a78bfa;color:#e9d5ff;text-decoration:none;margin-left:6px">📒 로그 열기</a>
+    <span id="up-status" class="mute" style="font-size:13px;margin-right:8px"></span><span id="done-csv"><button id="btn-csv">CSV 저장</button><button id="btn-copy">CSV 복사</button></span><button id="btn-rec-save" style="display:none;border-color:#ef4444"></button><button id="btn-new">새 로스팅</button><button id="btn-home">처음 화면 (설정)</button><a href="https://claude.ai/artifact/W44mDTe3PXTnU636qeAvXz" target="_blank" rel="noopener" style="display:inline-block;padding:8px 12px;border-radius:10px;border:1px solid #a78bfa;color:#e9d5ff;text-decoration:none;margin-left:6px">📒 로그 열기</a>
     <textarea id="csv-box" style="display:none" readonly></textarea>
   </div>
   <div id="ctrl">
     <div><span>화력</span>
     <button class="pw" data-p="80">80</button><button class="pw" data-p="70">70</button><button class="pw" data-p="60">60</button><button class="pw" data-p="50">50</button><button class="pw" data-p="40">40</button><button class="pw" data-p="30">30</button><button class="pw" data-p="20">20</button>
-    <span style="display:inline-block;width:28px"></span><button id="btn-de" class="big" style="border-color:#facc15">옐로잉</button><button id="btn-my" class="big" style="border-color:#fb923c">마이야르</button><button id="btn-fc" class="big">1차 팝</button><button id="btn-drop" class="big">배출</button></div>
+    <span style="display:inline-block;width:28px"></span><button id="btn-de" class="big" style="border-color:#facc15;line-height:1.15">옐로잉 엔드<br><span style="font-size:12px;opacity:.85">마이야르 시작</span></button><button id="btn-fc" class="big">1차 팝</button><button id="btn-drop" class="big">배출</button></div>
     <div><button id="btn-settings">설정</button><button id="btn-start-now">수동 시작</button><button id="btn-bg" class="spd">배경</button><button id="btn-realign">칸 맞추기</button><button id="btn-diag2">진단</button>
     <span id="spd-row" style="display:none"><button class="spd on" data-s="1">1×</button><button class="spd" data-s="2">2×</button><button class="spd" data-s="4">4×</button></span>
     <span style="display:inline-block;width:36px"></span><button id="btn-stop">종료</button></div>
@@ -349,13 +360,7 @@ var M1 = (function () {
 
 
   /* 칸의 밝기 지문(이진, 16x8) — 프레임 사이 변화 감지용 */
-  function fingerprint(img, box) {
-    var c = cropV(img, box), th = Math.max(70, otsu(c.v)), m = new Uint8Array(c.w * c.h);
-    for (var i = 0; i < m.length; i++) m[i] = c.v[i] > th ? 1 : 0;
-    var g = resizeArea(m, c.w, 0, 0, c.w, c.h), o = new Uint8Array(g.length);
-    for (var k = 0; k < g.length; k++) o[k] = g[k] > 0.4 ? 1 : 0;
-    return o;
-  }
+
 
 
   /* 검은 바탕 칸 찾기: (sx,sy) 근처의 어두운 픽셀에서 시작해 어두운 영역을 채워 나가 그 경계를 돌려준다.
@@ -611,7 +616,7 @@ var M1 = (function () {
     return { s: s, d: worst, n: gs.length };
   }
 
-  return { glyphs: glyphs, classify: classify, readField: readField, readTimer: readTimer, fingerprint: fingerprint, findDarkBox: findDarkBox, fitField: fitField, autoAlign: autoAlign, trackShift: trackShift, rotCrop: rotCrop, readBox: readBox, NW: NW, NH: NH };
+  return { glyphs: glyphs, classify: classify, readField: readField, readTimer: readTimer, findDarkBox: findDarkBox, fitField: fitField, autoAlign: autoAlign, trackShift: trackShift, rotCrop: rotCrop, readBox: readBox, NW: NW, NH: NH };
 })();
 if (typeof module !== 'undefined') module.exports = M1;
 </script>
@@ -752,9 +757,9 @@ var M1Engine = (function () {
     this.power = this.power.map(function (p) { return { t: shift(p.t), p: p.p }; });
     var keep = [];                                                    // 같은 시각에 겹치면 마지막 것만
     this.power.forEach(function (p) { if (keep.length && keep[keep.length - 1].t === p.t) keep[keep.length - 1] = p; else keep.push(p); }); this.power = keep;
-    ['de', 'my', 'fc', 'drop'].forEach(function (k) { if (self.events[k] !== null && self.events[k] !== undefined) self.events[k] = shift(self.events[k]); });
+    ['de', 'fc', 'drop'].forEach(function (k) { if (self.events[k] !== null && self.events[k] !== undefined) self.events[k] = shift(self.events[k]); });
     if (this.endAt !== undefined) this.endAt = shift(this.endAt);
-    var old = this.events; this.events = { tp: null, de: old.de, my: old.my, fc: old.fc, drop: old.drop, t150: null };
+    var old = this.events; this.events = { tp: null, de: old.de, fc: old.fc, drop: old.drop, t150: null };
     this.buckets = {}; this.sec = {}; this.lastSec = -1; this.alerts = []; this.silent = true;
     this.raw.forEach(function (z) { if (z.v >= self.t0) self._place(z); });
     this._finalize(this.vNow); this.silent = false;
@@ -842,7 +847,8 @@ var M1Engine = (function () {
     var self = this, b = this.bt(s);
     if (this.events.tp === null && s > 15 && s < 180 && b !== null) {      // TP: 최저점에서 2℃ 오르면 확정 — 진짜 TP는 100℃ 안팎이라 135℃ 넘는 최저점(예열 중)은 인정 안 함
       var lo = null, ls = null; for (var k = 5; k <= s; k++) { var x = this.bt(k); if (x !== null && (lo === null || x < lo)) { lo = x; ls = k; } }
-      if (lo !== null && lo <= 135 && b >= lo + 2) this.events.tp = ls;
+      var b0 = null; for (var q = 0; q <= 10; q++) { var y = this.bt(q); if (y !== null && (b0 === null || y > b0)) b0 = y; }   // 시작 직후(투입 직전) 온도 — 시작 방식과 무관
+      if (lo !== null && (lo <= 135 || (b0 !== null && lo <= b0 - 25)) && b >= lo + 2) this.events.tp = ls;   // 고온·소량 투입으로 TP가 135℃를 넘어도 잡힘
     }
     var marks = this.cfg.marks || [140, 150, 159, 173];
     marks.forEach(function (m) {
@@ -903,17 +909,18 @@ var M1Engine = (function () {
     L.push('', 'power_changes,time_s,time,power');
     this.power.forEach(function (x) { L.push(['화력', Math.max(1, x.t), fmt(Math.max(1, x.t)), x.p].join(',')); });
     L.push('', 'event,time_s,time,BT');
-    var self = this, names = { tp: 'TP', de: '건조 종료', my: '마이야르', fc: '1차 팝', drop: '배출' };   // 옐로잉 = 로거의 '건조 종료'
+    var self = this, names = { tp: 'TP', de: '옐로잉 엔드', fc: '1차 팝', drop: '배출' };   // 옐로잉 엔드 = 마이야르 시작(로거의 예전 이름 '건조 종료')
     var rows = [];                                             // 시간 순서로, 옐로잉은 바로 뒤에 로거용 '건조 종료'를 같은 시각으로
-    ['tp', 'de', 'my', 'fc', 'drop'].forEach(function (k) { var s = self.events[k]; if (s === null || s === undefined) return; var b = self.bt(s), bb = b !== null ? Math.round(b) : '';
-      if (k === 'de') rows.push([s, 0, ['옐로잉', s, fmt(s), bb].join(',')]); rows.push([s, k === 'de' ? 1 : 0, [names[k], s, fmt(s), bb].join(',')]); });
+    ['tp', 'de', 'fc', 'drop'].forEach(function (k) { var s = self.events[k]; if (s === null || s === undefined) return; var b = self.bt(s), bb = b !== null ? Math.round(b) : '';
+      rows.push([s, 0, [names[k], s, fmt(s), bb].join(',')]); });
     rows.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).forEach(function (r) { L.push(r[2]); });
     L.push('', 'batch,value', 'interval_s,1');
-    ['name', 'green', 'size', 'charge', 'air', 'drum', 'set', 'out', 'agtron', 'notes', 'batchno', 'origin', 'variety', 'process', 'alt', 'moist', 'dens', 'intent', 'rating'].forEach(function (k) { if (meta[k] !== undefined && meta[k] !== '') L.push(k + ',' + String(meta[k]).replace(/[\r\n,]/g, ' ')); });
+    ['name', 'green', 'size', 'charge', 'air', 'drum', 'set', 'out', 'agtron', 'notes', 'batchno', 'origin', 'variety', 'process', 'alt', 'moist', 'dens', 'intent', 'rating', 'wait_s', 'gap_s', 'bt0', 'at0'].forEach(function (k) { if (meta[k] !== undefined && meta[k] !== '') L.push(k + ',' + String(meta[k]).replace(/[\r\n,]/g, ' ')); });
     return L.join('\n');
   };
 
-  P.snapshot = function () { return { sec: this.sec, lastSec: this.lastSec, power: this.power, events: this.events, k: this.k, cfg: { fcTemp: this.cfg.fcTemp, startPower: this.cfg.startPower } }; };
+  P.snapshot = function () { var sec = {}, self = this; Object.keys(this.sec).forEach(function (k) { var o = self.sec[k], c = {}; Object.keys(o).forEach(function (f) { if (f.indexOf('r_') !== 0) c[f] = o[f]; }); sec[k] = c; });   // RoR 저장값은 빼고(다시 계산 가능)
+    return { sec: sec, lastSec: this.lastSec, power: this.power, events: this.events, k: this.k, cfg: { fcTemp: this.cfg.fcTemp, startPower: this.cfg.startPower } }; };
   P.restore = function (s, t0) { this.mode = 'run'; this.t0 = t0; this.sec = s.sec; this.lastSec = s.lastSec; this.power = s.power; this.events = s.events; this.k = s.k || 0; this.charge = t0 + 3.5; if (s.cfg) { this.cfg.fcTemp = s.cfg.fcTemp; this.cfg.startPower = s.cfg.startPower; } };
   Engine.fmt = fmt;
   return Engine;
@@ -957,6 +964,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   var settings = load('settings', { fcTemp: 183, startPower: 50, name: '', green: '', size: 125, alerts: true });
   if (settings.track === undefined) settings.track = true;
   if (settings.guide === undefined) settings.guide = true;
+  if (settings.dropSec === undefined) { settings.dropSec = 40; settings.dropDbt = 4; }
   if (settings.adapt === undefined) settings.adapt = true;
   if (!settings.bgAlign) settings.bgAlign = '150';
   if (!settings.v2) { settings.rorWin = 'fast'; settings.v2 = 1; save('settings', settings); }
@@ -1046,14 +1054,15 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   /* 엔진 한 걸음: 기록 화면과 칸 맞추기 화면이 똑같이 거침(종료·저장·알림 누락 방지) */
   function stepEngine(g, onMain) {
     var before = engine.mode;
-    if (before === 'wait' && recOn() && nowV() - rec.startV > 150) recStart(true);   // 예열 대기가 길면 녹화 앞부분을 버리고 새로(투입 전 2분 반만 남김)
+    if (before === 'wait' && engine.charge === null && recOn() && nowV() - rec.startV > 150) recStart(true);   // 투입 확인 중(8초)엔 새로 시작하지 않음 — 투입 장면이 날아가지 않게   // 예열 대기가 길면 녹화 앞부분을 버리고 새로(투입 전 2분 반만 남김)
     engine.feed(nowV(), g.img, g.boxes, theta); engine.adapt();
     if (onMain) maybeTrack();
     autosave(); adaptTemplates(g);
     if (onMain) Object.keys(engine.health).forEach(function (k) { health[k] = engine.health[k] ? 2 : 0; });
+    if (before === 'wait' && engine.mode === 'run') { var le = load('lastEnd', null); engine.cond = { wait_s: waitSince ? Math.round((Date.now() - waitSince) / 1000) : '', gap_s: le && Date.now() - le < 6 * 3600 * 1000 ? Math.round((Date.now() - le) / 1000) : '' }; }
     if (before === 'wait' && engine.mode === 'run') { beep(2); toast(engine.startedBy === 'timer' ? '패널 타이머 시작 감지 — 기록 시작' : engine.startedBy === 'manual' ? '수동 시작 — 기록 시작' : '투입 감지 — 기록 시작'); }
     if (engine.notice) { toast(engine.notice); engine.notice = null; alertShown = engine.alerts.length; G = null; }
-    guideStep(); updBanner();
+    guideStep(); safetyStep(); updBanner();
     if (engine.mode === 'done' && before !== 'done') { finish(); if (!onMain) toast('기록이 끝났습니다 — 기록 화면에서 저장하세요'); }
     handleAlerts();
   }
@@ -1278,8 +1287,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   }
   function bgSource() {
     var k = settings.bg; if (!k) return null;
-    if (k === 'file') return load('bgFile', null);
-    if (k.indexOf('lib:') === 0) { var it = libGet(k.slice(4)); return it ? parseLogCsv(it.csv, it.name) : null; }
+    if (k.indexOf('lib:') === 0) { var it = libGet(k.slice(4)); if (!it) return null; var sp = parseLogCsv(it.csv, it.name); sp.name = it.name; return sp; }   // 이름은 보관함 것
     var i = +k; return PRESETS[i] || null;
   }
   function refreshBg() { G = null; var src = bgSource(); BG = src ? buildBg(src) : null; var lab = $('bg-label'); if (lab) lab.textContent = BG ? BG.name : '없음'; }
@@ -1290,7 +1298,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       if (c[0] === 'time_s') { sec = 'd'; return; } if (c[0] === 'power_changes') { sec = 'p'; return; } if (c[0] === 'event') { sec = 'e'; return; } if (c[0] === 'batch') { sec = 'b'; return; }
       if (sec === 'd' && /^\d+$/.test(c[0])) { var s = +c[0]; bt[s] = c[2] !== '' && c[2] !== undefined ? +c[2] : null; at[s] = c[3] !== '' && c[3] !== undefined ? +c[3] : null; }
       else if (sec === 'p' && c.length >= 4) power.push([+c[1], +c[3]]);
-      else if (sec === 'e') { var key = { 'TP': 'tp', '건조 종료': 'de', '옐로잉': 'de', '마이야르': 'my', '1차 팝': 'fc', '배출': 'drop' }[c[0]]; if (key) ev[key] = +c[1]; }
+      else if (sec === 'e') { var key = { 'TP': 'tp', '건조 종료': 'de', '옐로잉': 'de', '옐로잉 엔드': 'de', '마이야르 시작': 'de', '1차 팝': 'fc', '배출': 'drop' }[c[0]]; if (key) ev[key] = +c[1]; }
       else if (sec === 'b' && c[1]) { if (c[0] === 'name') name = c[1]; else if (c[0] === 'green') green = c[1]; else if (c[0] === 'size') size = +c[1]; }
     });
     for (var i = 0; i < bt.length; i++) { if (bt[i] === undefined) bt[i] = null; if (at[i] === undefined) at[i] = null; }
@@ -1364,7 +1372,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   }
   function fcBTof(src) { return src.ev && src.ev.fc !== null && src.ev.fc !== undefined && src.bt[src.ev.fc] !== null ? src.bt[src.ev.fc] : null; }
   function libFromCsv(csv, fname, extra) {
-    var src = parseLogCsv(csv, fname || 'CSV'); if (src.bt.filter(function (x) { return x !== null; }).length < 20) return null;   // 10초 간격 옛 기록도 받음
+    var src = parseLogCsv(csv, fname || 'CSV'); if (src.bt.filter(function (x) { return x !== null; }).length < 20) return null;
+    if (fname && /^\d{6}_M1(_\d+)?$/.test(src.name)) src.name = fname.replace(/_M1[ _]/, '_').trim();   // 옛 기본 이름이면 파일 이름으로(로거와 같은 규칙)   // 10초 간격 옛 기록도 받음
     var it = { id: (extra && extra.id) || ('c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5)), name: src.name, green: src.green || '', size: src.size, fcBT: fcBTof(src), fc: src.ev.fc, rating: (extra && extra.rating) || 0, date: (extra && extra.date) || src.name.slice(0, 6), csv: csv };
     return it;
   }
@@ -1393,11 +1402,13 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var fcs = mine.map(function (x) { return x.fcBT; }).filter(function (x) { return x !== null && x !== undefined; });
     if (fcs.length) { var m = Math.round(fcs.reduce(function (p, q) { return p + q; }, 0) / fcs.length); settings.fcTemp = m; $('set-fcTemp').value = m; msg.push('팝 평균 ' + m + '℃ (' + fcs.length + '배치)'); }
     if (mine.length) {
-      var best = mine.slice().sort(function (p, q) { return (q.rating || 0) - (p.rating || 0) || (p.id < q.id ? 1 : -1); })[0];
+      var dkey = function (x) { var m = /^(\d{6})/.exec(x.name || ''); return (m ? m[1] : (x.date || '000000')) + (x.name || ''); };   // 날짜(YYMMDD)로 최근을 고름
+      var best = mine.slice().sort(function (p, q) { return (q.rating || 0) - (p.rating || 0) || (dkey(p) < dkey(q) ? 1 : dkey(p) > dkey(q) ? -1 : 0); })[0];
       settings.bg = 'lib:' + best.id; settings.bgOn = true; $('bg-sel').value = settings.bg; refreshBg(); renderBgBtn();
       msg.push('기준 배치 ' + best.name + (best.rating ? ' ★' + best.rating : ''));
     }
     var b = beanOf(name); ['origin', 'variety', 'process', 'alt', 'moist', 'dens'].forEach(function (k) { $('bean-' + k).value = b && b[k] !== undefined ? b[k] : ''; });
+    $('bean-sum').textContent = beanNote() || '';
     save('settings', settings);
     toast(mine.length ? name + ': ' + msg.join(' · ') : name + ': 처음 볶는 생두입니다');
   }
@@ -1408,6 +1419,54 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     return out.join(' · ');
   }
 
+
+  /* ---------- 안전장치(처음 정한 프로파일 규칙) · 배출 목표 ---------- */
+  var SF = null;
+  function safetyStep() {
+    if (!engine || engine.mode !== 'run') return;
+    var E = engine, s = E.lastSec; if (!SF || SF.eng !== E) SF = { eng: E, last: {}, drop: null };
+    if (E.events.tp === null || s < E.events.tp + 60) return;
+    var d = E.rorDisp(s), b = E.bt(s), now = s, fc = E.events.fc;
+    var bts = []; for (var k = s - 15; k <= s; k++) { var x = E.bt(k); if (x !== null) bts.push(x); }
+    var rise15 = bts.length ? Math.max.apply(null, bts) - bts[0] : null, rise10 = null;
+    if (bts.length >= 6) rise10 = Math.max.apply(null, bts.slice(-11)) - bts[Math.max(0, bts.length - 11)];
+    function once(key, gap) { if (SF.last[key] && now - SF.last[key] < gap) return false; SF.last[key] = now; return true; }
+    if (fc === null || fc === undefined) {
+      if (d !== null && d <= 2 && rise15 !== null && rise15 <= 0 && b !== null && b >= 140 && once('stall', 30)) showBanner('정체 위험 — 화면 ROR ' + d + ', 15초째 BT가 안 오름 → <b>화력 +10</b>', null, true);
+      else if (d !== null && d <= 3 && b !== null && b >= 150 && once('low', 60)) showBanner('RoR 낮음(화면 ' + d + ') — 남은 감화는 보류', null, false);
+    } else {
+      if (d !== null && d <= 1 && rise10 !== null && rise10 <= 0 && once('crash', 20)) showBanner('팝 뒤 BT가 10초째 안 오름(화면 ' + d + ') → <b>지금 배출</b>', null, true);
+      dropStep(E, s, b, fc);
+    }
+  }
+  function dropTarget() {                                       // 기준 배치의 발현(시간·℃), 없으면 설정값
+    if (guideActive() && BG.ev && BG.ev.fc && BG.ev.drop && BG.bt[BG.ev.fc] !== null && BG.bt[BG.ev.drop] !== null) return { sec: BG.ev.drop - BG.ev.fc, dbt: Math.round(BG.bt[BG.ev.drop] - BG.bt[BG.ev.fc]), from: '기준 배치' };
+    return { sec: +settings.dropSec || 40, dbt: +settings.dropDbt || 4, from: '기본' };
+  }
+  function dropStep(E, s, b, fc) {
+    if (E.events.drop !== null && E.events.drop !== undefined) return;
+    var T = dropTarget(), fb = E.bt(fc), el = s - fc; if (fb === null || b === null) return;
+    var key = 'd' + fc; if (!SF.drop || SF.drop.key !== key) SF.drop = { key: key, pre: false, go: false };
+    if (!SF.drop.pre && (el >= T.sec - 10 || b >= fb + T.dbt - 1)) { SF.drop.pre = true; showBanner('곧 배출 — 목표 팝 +' + T.sec + '초 · ' + Math.round(fb + T.dbt) + '℃ (' + T.from + ')', null, false); }
+    if (!SF.drop.go && (el >= T.sec || b >= fb + T.dbt)) { SF.drop.go = true; showBanner('<b>지금 배출</b> — ' + (b >= fb + T.dbt ? '목표 온도 +' + T.dbt + '℃' : '목표 시간 +' + T.sec + '초') + ' 도달 (' + T.from + ')', null, true); }
+  }
+  function phaseParts() {                                       // 건조(투입→옐로잉 엔드) · 마이야르(→1차 팝) · 발현(→배출, DTR)
+    if (!engine || engine.mode === 'wait') return null;
+    var E = engine, ev = E.events, has = function (x) { return x !== null && x !== undefined; };
+    var end = has(ev.drop) ? ev.drop : (E.mode === 'run' ? E.now() : E.lastSec); if (!has(ev.de) || end <= 0) return null;
+    var dry = Math.min(ev.de, end), mai = has(ev.fc) ? ev.fc - ev.de : Math.max(0, end - ev.de), dev = has(ev.fc) ? Math.max(0, end - ev.fc) : 0;
+    return { dry: dry, mai: mai, dev: dev, tot: Math.max(1, end), fc: has(ev.fc) };
+  }
+  function phaseLine() { var p = phaseParts(); if (!p) return ''; var f = M1Engine.fmt, pc = function (x) { return Math.round(x / p.tot * 100) + '%'; };
+    return '건조 ' + f(p.dry) + ' (' + pc(p.dry) + ') · 마이야르 ' + f(p.mai) + ' (' + pc(p.mai) + ')' + (p.fc ? ' · 발현 ' + f(p.dev) + ' (DTR ' + pc(p.dev) + ')' : ''); }
+  function renderPhaseBar() {
+    var p = phaseParts(), bar = $('phase-bar'); if (!p) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    var f = M1Engine.fmt, seg = function (id, x, label) { var el = $(id), w = x / p.tot * 100; el.style.width = w + '%'; el.style.display = x > 0 ? '' : 'none'; el.textContent = w >= 12 ? label + ' ' + f(x) + ' · ' + Math.round(w) + '%' : (label === 'DTR' ? 'DTR ' : '') + Math.round(w) + '%'; };
+    seg('ph-dry', p.dry, '건조'); seg('ph-mai', p.mai, '마이야르'); seg('ph-dev', p.dev, 'DTR');
+  }
+
+
   /* ---------- 재현 코파일럿: 기준(배경) 배치의 화력 변경을 '시각'이 아니라 '그때의 BT'에 묶어 알림 ---------- */
   var G = null;                                               // 이 기록의 진행 상태
   function guideSteps() {                                     // [{bt: 기준 BT, p: 화력, atTP: TP 전 변경이면 true, t: 기준 시각}]
@@ -1416,15 +1475,21 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     BG.power.forEach(function (q, i) {
       if (i === 0 || q[0] <= 1) return;                          // 시작 화력은 설정의 시작 화력으로
       if (tp !== null && q[0] <= tp + 15) out.push({ atTP: true, p: q[1], t: q[0] });
-      else { var b = BG.bt[q[0]]; if (b !== null && b !== undefined) out.push({ bt: Math.round(b), p: q[1], t: q[0] }); }
+      else { var b = BG.bt[q[0]]; for (var dk = 1; (b === null || b === undefined) && dk <= 30; dk++) b = BG.bt[q[0] - dk] !== null && BG.bt[q[0] - dk] !== undefined ? BG.bt[q[0] - dk] : BG.bt[q[0] + dk];   // 비면 가장 가까운 값
+        if (b !== null && b !== undefined) out.push({ bt: Math.round(b), p: q[1], t: q[0] }); }
     });
     return out;
+  }
+  function guideActive() { return !!(settings.guide && BG && settings.bgOn); }
+  function say(text) {                                          // 음성 안내(설정에서 켬) — 화면을 보지 않고도
+    if (!settings.voice || !window.speechSynthesis) return;
+    try { var u = new SpeechSynthesisUtterance(String(text).replace(/<[^>]+>/g, '').replace(/℃/g, '도').replace(/—/g, ',')); u.lang = 'ko-KR'; u.rate = 1.1; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
   }
   function bgStartPower() { return settings.guide && BG && settings.bgOn && BG.power && BG.power.length ? BG.power[0][1] : null; }
   function bgTimeAtBT(b) { var tp = (BG.ev && BG.ev.tp) || 30; for (var k = tp + 5; k < BG.bt.length; k++) if (BG.bt[k] !== null && BG.bt[k] >= b) return k; return null; }
   var banner = null;
-  function showBanner(text, p, strong) { banner = { p: p, until: performance.now() + 20000 }; var b = $('guide-banner'); b.innerHTML = text; b.className = strong ? 'on strong' : 'on'; if (strong) beep(2); }
-  function updBanner() { var b = $('guide-banner'); if (!banner) { b.className = ''; return; } var cur = engine && engine.power.length ? engine.power[engine.power.length - 1].p : null; if (cur === banner.p || performance.now() > banner.until || !engine || engine.mode !== 'run') { banner = null; b.className = ''; } }
+  function showBanner(text, p, strong) { banner = { p: p, until: performance.now() + 20000 }; var b = $('guide-banner'); b.innerHTML = text; b.className = strong ? 'on strong' : 'on'; if (strong) beep(2); say(text); }
+  function updBanner() { var b = $('guide-banner'); if (!banner) { b.className = ''; return; } var cur = engine && engine.power.length ? engine.power[engine.power.length - 1].p : null; if ((banner.p !== null && cur === banner.p) || performance.now() > banner.until || !engine || engine.mode !== 'run') { banner = null; b.className = ''; } }
   function guideStep() {
     if (!settings.guide || !BG || !settings.bgOn || !engine || engine.mode !== 'run') return;
     var E = engine, s = E.lastSec;
@@ -1475,7 +1540,8 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       var a = engine.alerts[alertShown++], txt = 'BT ' + a.bt + '℃';
       if (a.bt === 150 && engine.events.t150 !== null) txt += ' · 목표 1차 팝 ' + M1Engine.fmt(engine.events.t150 + 190);
       if (a.bt === 173) { var s60 = engine.sum60(engine.lastSec); txt += s60 !== null ? ' · 60초 합 ' + s60 : ''; }
-      beep(1); toast(txt);
+      if (guideActive()) continue;                               // 기준 배치를 따를 땐 코파일럿 띠가 안내(겹치지 않게)
+      beep(1); toast(txt); say(txt);
     }
   }
 
@@ -1494,9 +1560,10 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     $('v-disp').textContent = (rd === null || rd === undefined ? '—' : rd) + '  /  ' + (s60 === null ? '—' : s60);
     ['bt', 'at', 'ror', 'timer'].forEach(function (k) { $('h-' + k).className = 'dot ' + (health[k] === 2 ? 'g' : 'r'); });
     $('fps').textContent = (recOn() ? '● 녹화 · ' : '') + fps.toFixed(1) + '장/초' + (trackInfo ? ' · ' + trackInfo : ''); $('rw').textContent = E.cfg.rorWin === 'fast' ? '빠름' : (E.cfg.rorWin || 30) + '초';
-    var curP = E.power.length ? E.power[E.power.length - 1].p : 50, ph = E.predict(0), pc = curP - 10 >= 20 ? E.predict(-10) : null, tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + 190) : '—';
+    var curP = E.power.length ? E.power[E.power.length - 1].p : 50, ph = E.predict(0), pc = curP - 10 >= 20 ? E.predict(-10) : null, bgDur = guideActive() && BG.t150 !== null && BG.ev && BG.ev.fc ? BG.ev.fc - BG.t150 : null, tgt = E.events.t150 !== null ? M1Engine.fmt(E.events.t150 + (bgDur !== null ? bgDur : 190)) : '—';
     $('p-hold').innerHTML = ph ? '30초 <b>' + fix(ph.r30) + '</b> · 60초 <b>' + fix(ph.r60) + '</b> · 팝 <b>' + (ph.passed ? '온도 지남' : ph.fc ? M1Engine.fmt(ph.fc) : '—') + '</b>' : '<span class="mute">예측은 1:30 이후, 1차 팝 전까지</span>';
     var gl = guideLine(); $('p-guide').innerHTML = gl; $('p-guide-row').style.display = gl ? '' : 'none';
+    renderPhaseBar();
     $('p-cut').innerHTML = curP - 10 < 20 && ph ? '<span class="mute">최저 화력이라 더 내릴 수 없음</span>' : pc ? '30초 <b>' + fix(pc.r30) + '</b> · 60초 <b>' + fix(pc.r60) + '</b> · 팝 <b>' + (pc.passed ? '온도 지남' : pc.fc ? M1Engine.fmt(pc.fc) : '—') + '</b>' : '';
     $('btn-start-now').style.display = E.mode === 'wait' ? '' : 'none'; $('btn-settings').style.display = E.mode === 'run' ? 'none' : '';
     var tlab = $('p-target-k');
@@ -1504,7 +1571,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
       var cur = E.mode === 'run' ? E.now() : s, dev = Math.max(0, cur - E.events.fc), fcb = E.bt(E.events.fc), dB = bt !== null && fcb !== null ? Math.round(bt - fcb) : null;
       tlab.textContent = '1차 팝 이후 · DTR · ΔBT';
       $('p-target').textContent = M1Engine.fmt(dev) + ' · ' + (cur > 0 ? (dev / cur * 100).toFixed(1) : '0.0') + '% · ' + (dB === null ? '—' : (dB >= 0 ? '+' : '') + dB + '℃');
-    } else { tlab.textContent = '목표 1차 팝 (150℃+3:10)'; $('p-target').textContent = tgt; }
+    } else { tlab.textContent = bgDur !== null ? '목표 1차 팝 (기준 배치 150℃→팝 ' + bgDur + '초)' : '목표 1차 팝 (150℃+3:10)'; $('p-target').textContent = tgt; }
     drawChart(ph, pc);
     renderPower();
   }
@@ -1531,7 +1598,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     var r0 = E.events.tp !== null ? E.events.tp + 15 : 1e9;
     cctx.save(); cctx.beginPath(); cctx.rect(L, T, pw, phh); cctx.clip();
     line(function (s) { return s >= r0 ? E.ror(s) : null; }, Yr, '#22c55e', 2.5);
-    [['de', '옐로잉', '#facc15'], ['my', '마이야르', '#fb923c'], ['fc', '1차 팝', '#f43f5e'], ['drop', '배출', '#a78bfa']].forEach(function (m, i) {   // 표시한 구간
+    [['de', '옐로잉 엔드', '#facc15'], ['fc', '1차 팝', '#f43f5e'], ['drop', '배출', '#a78bfa']].forEach(function (m, i) {   // 표시한 구간
       var t = E.events[m[0]]; if (t === null || t === undefined) return;
       cctx.strokeStyle = m[2]; cctx.globalAlpha = 0.7; cctx.lineWidth = 1.5; cctx.setLineDash([5, 4]); cctx.beginPath(); cctx.moveTo(X(t), T); cctx.lineTo(X(t), T + phh); cctx.stroke(); cctx.setLineDash([]);
       cctx.globalAlpha = 1; cctx.fillStyle = m[2]; cctx.font = 'bold 12px -apple-system,sans-serif'; cctx.fillText(m[1] + ' ' + M1Engine.fmt(t), X(t) + 4, T + 14 + (i % 2) * 15); cctx.font = '11px -apple-system,sans-serif';
@@ -1573,29 +1640,29 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     else if (engine && !engine.counted) { usedName(''); }
     if (engine) engine.counted = true;
     if (settings.intent) { settings.intent = ''; save('settings', settings); $('set-intent').value = ''; }   // 의도는 배치마다 새로
-    beep(3); recStop(); render(); if (source === 'file') video.pause(); $('btn-drop').textContent = '배출'; clearRun();
+    save('lastEnd', Date.now()); beep(3); recStop(); render(); if (source === 'file') video.pause(); $('btn-drop').textContent = '배출'; clearRun();
     $('done-w').style.display = ''; $('in-g').value = engine.inG || settings.size || ''; $('out-g').value = engine.outG || ''; showLoss();
-    $('rating').value = engine.rating || ''; save('lastCsv', csvText()); saveRunToLib(); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
+    $('rating').value = engine.rating || ''; save('lastCsv', csvText()); saveRunToLib(); upStatus(''); driveUpload(1500); $('done-msg').textContent = '기록이 끝났습니다'; $('done-csv').style.display = ''; $('done-bar').style.display = ''; $('btn-last').style.display = '';
   }
   function csvText() {
     if (!engine) return load('lastCsv', '');
     var E = engine, ev = E.events, f = M1Engine.fmt, inG = E.inG || settings.size, outG = E.outG || '', bits = [];
-    if (ev.de !== null && ev.de !== undefined) bits.push('옐로잉 ' + f(ev.de));
-    if (ev.my !== null && ev.my !== undefined) bits.push('마이야르 ' + f(ev.my));
+    if (ev.de !== null && ev.de !== undefined) bits.push('옐로잉 엔드(마이야르 시작) ' + f(ev.de));
     if (inG && outG) bits.push('투입 ' + inG + 'g → 배출 ' + outG + 'g (감량 ' + ((inG - outG) / inG * 100).toFixed(1) + '%)');
     if (rec && rec.engine === E && E.t0 !== null) { var a0 = (E.t0Start !== undefined ? E.t0Start : E.t0) - rec.startV, a1 = E.t0 - rec.startV; bits.push('녹화 영상 ' + a0.toFixed(2) + '초 = 기록 0초' + (Math.abs(a1 - a0) >= 0.2 ? ' (끝날 때 ' + a1.toFixed(2) + '초)' : '')); }
     var bn = beanNote(); if (bn) bits.push(bn);
     if (E.rating) bits.push('별점 ' + E.rating);
-    bits.push('M1 실시간 앱 v2.8로 기록' + (E.startedBy ? ' · 시작: ' + ({ timer: '패널 타이머', bt: 'BT 급락', manual: '수동' })[E.startedBy] : '') + (E.reanchors ? ' · 시각 자동 보정' : ''));
+    bits.push('M1 실시간 앱 v2.10로 기록' + (E.startedBy ? ' · 시작: ' + ({ timer: '패널 타이머', bt: 'BT 급락', manual: '수동' })[E.startedBy] : '') + (E.reanchors ? ' · 시각 자동 보정' : ''));
     var B = beanOf(settings.green) || {};
     return E.csv({ name: settings.name || E.named || defName(), green: settings.green, size: inG, out: outG, charge: 170, air: 80, drum: 100, set: 220, notes: bits.join(' · '),
+      wait_s: E.cond ? E.cond.wait_s : '', gap_s: E.cond ? E.cond.gap_s : '', bt0: (function () { var m = null; for (var q = 0; q <= 10; q++) { var y = E.bt(q); if (y !== null && (m === null || y > m)) m = y; } return m === null ? '' : Math.round(m); })(), at0: E.at(1) !== null ? Math.round(E.at(1)) : '',
       batchno: E.batchNo || batchNo(), intent: E.intent !== undefined ? E.intent : (settings.intent || ''), rating: E.rating || '',
       origin: B.origin || '', variety: B.variety || '', process: B.process || '', alt: B.alt || '', moist: B.moist || '', dens: B.dens || '' });
   }
-  $('rating').addEventListener('change', function () { if (!engine) return; engine.rating = +$('rating').value || 0; save('lastCsv', csvText()); saveRunToLib(); });
+  $('rating').addEventListener('change', function () { if (!engine) return; engine.rating = +$('rating').value || 0; save('lastCsv', csvText()); saveRunToLib(); driveUpload(4000); });
   function showLoss() { var i = +$('in-g').value, o = +$('out-g').value; $('loss').textContent = i && o ? '감량 ' + ((i - o) / i * 100).toFixed(1) + '%' : ''; }
   ['in-g', 'out-g'].forEach(function (id) {
-    $(id).addEventListener('input', function () { if (!engine) return; engine.inG = +$('in-g').value || null; engine.outG = +$('out-g').value || null; showLoss(); save('lastCsv', csvText()); saveRunToLib(); });
+    $(id).addEventListener('input', function () { if (!engine) return; engine.inG = +$('in-g').value || null; engine.outG = +$('out-g').value || null; showLoss(); save('lastCsv', csvText()); saveRunToLib(); driveUpload(4000); });
   });
   function downloadCsv() {
     var txt = '\ufeff' + csvText(), name = (settings.name || (engine && engine.named) || defName()).replace(/[\\/:*?"<>|\s]+/g, '_') + '.csv';
@@ -1654,7 +1721,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     });
   });
   $('lib-files').addEventListener('change', function (e) {
-    var fs = Array.prototype.slice.call(e.target.files || []), n = 0, bad = 0, left = fs.length;
+    var fs = Array.prototype.slice.call(e.target.files || []), n = 0, bad = 0, left = fs.length, lastOne = null;
     if (!left) return;
     fs.forEach(function (file) {
       var rd = new FileReader();
@@ -1662,7 +1729,9 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
         var txt = String(rd.result);
         if (/\.json$/i.test(file.name)) {                     // 로거가 드라이브에 써 준 보관함 파일
           try {
-            var J = JSON.parse(txt), B = load('beans', {}), L = libAll(), byId = {};
+            var J = JSON.parse(txt), B = load('beans', {}), L = libAll(), byId = {}, names = {};
+            (J.batches || []).forEach(function (b) { if (b.name) names[b.name] = 1; });
+            L = L.filter(function (x) { return !(names[x.name] && x.id.charAt(0) !== 'L'); });   // 로거가 기준: 앱에서 만든 같은 이름 배치는 로거 것으로 교체(중복 방지)
             L.forEach(function (x, i) { byId[x.id] = i; });
             (J.batches || []).forEach(function (b) {
               var it = libFromCsv(b.csv, b.name, { id: 'L' + b.id, rating: b.rating || 0, date: (b.name || '').slice(0, 6) }); if (!it) { bad++; return; }
@@ -1671,13 +1740,56 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
             });
             libSave(L); save('beans', B); fillBeanList(); fillLibOptions();
           } catch (e) { bad++; }
-        } else { var it = libFromCsv(txt, file.name.replace(/\.csv$/i, '')); if (it) { libPut(it); n++; } else bad++; }
-        if (--left === 0) toast('보관함에 ' + n + '개 넣었습니다' + (bad ? ' (' + bad + '개는 읽지 못함)' : ''));
+        } else { var it = libFromCsv(txt, file.name.replace(/\.csv$/i, '')); if (it) { var L2 = libAll().filter(function (x) { return x.name !== it.name; }); L2.push(it); libSave(L2); fillBeanList(); fillLibOptions(); n++; lastOne = it; } else bad++; }
+        if (--left === 0) { if (fs.length === 1 && lastOne) { settings.bg = 'lib:' + lastOne.id; settings.bgOn = true; save('settings', settings); $('bg-sel').value = settings.bg; refreshBg(); renderBgBtn(); }   // CSV 하나면 바로 기준 배치로
+          toast('보관함에 ' + n + '개 넣었습니다' + (bad ? ' (' + bad + '개는 읽지 못함)' : '') + (fs.length === 1 && lastOne ? ' · 기준 배치로 선택' : '')); }
       };
       rd.readAsText(file);
     });
   });
 
+
+
+  /* ---------- 드라이브 자동 업로드(사용자의 Google Apps Script 웹 앱으로 CSV 전송) ---------- */
+  var upTimer = null;
+  function upStatus(t) { var el = $('up-status'); if (el) el.textContent = t || ''; }
+  function upPayload() {
+    var name = settings.name || (engine && engine.named) || defName(), m = /^(\d{6})/.exec(name);
+    return { secret: settings.upKey || '', folder: m ? m[1] : today(), name: name, csv: '\ufeff' + csvText() };
+  }
+  function upSend(p) {                                          // 응답을 읽을 수 있으면 확인, 못 읽으면 '보냄'
+    return fetch(settings.upUrl, { method: 'POST', body: JSON.stringify(p) })     // 본문만(text/plain) — 사전 요청 없이 전송
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (!j || !j.ok) throw { app: true, msg: j && j.error }; return '드라이브 저장됨 · ' + j.folder + '/' + j.name; })
+      .catch(function (err) {
+        if (err && err.app) throw err;
+        return fetch(settings.upUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(p) }).then(function () { return '드라이브로 보냄 (확인 응답은 못 받음)'; });
+      });
+  }
+  function upQueue() { return load('upq', []); }
+  function upFlush() {                                          // 실패해 보관해 둔 것 다시 보내기
+    if (!settings.upUrl) return; var Q = upQueue(); if (!Q.length) return;
+    var p = Q[0]; upSend(p).then(function (msg) { var Q2 = upQueue().filter(function (x) { return !(x.name === p.name && x.folder === p.folder); }); save('upq', Q2); upStatus(msg + (Q2.length ? ' · 남은 ' + Q2.length + '개' : '')); if (Q2.length) setTimeout(upFlush, 1500); }).catch(function () {});
+  }
+  function driveUpload(delay) {
+    if (!settings.upUrl || !engine || engine.lastSec < 60 || source === 'file') return;
+    clearTimeout(upTimer);
+    upTimer = setTimeout(function () {
+      var p = upPayload(); upStatus('드라이브로 보내는 중…');
+      upSend(p).then(function (msg) { upStatus(msg); upFlush(); })
+        .catch(function (err) {
+          if (err && err.app) { upStatus('드라이브가 거절함 · ' + (err.msg === 'secret' ? '비밀 키가 다릅니다' : (err.msg || ''))); return; }
+          var Q = upQueue().filter(function (x) { return !(x.name === p.name && x.folder === p.folder); }); Q.push(p); save('upq', Q);
+          upStatus('인터넷 연결 문제로 못 보냄 — 다음에 자동으로 다시 보냅니다');
+        });
+    }, delay || 0);
+  }
+  function upTest() {
+    if (!settings.upUrl) { toast('업로드 주소를 먼저 넣어 주세요'); return; }
+    fetch(settings.upUrl + (settings.upUrl.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(settings.upKey || '')).then(function (r) { return r.json(); })
+      .then(function (j) { toast(j && j.ok ? '연결됨 · 드라이브 폴더 ' + (j.root || 'M1') + (j.keyOk === false ? ' — 비밀 키가 다릅니다' : '') : '응답이 이상합니다'); })
+      .catch(function () { toast('연결 실패 — 주소를 확인하거나, 배포할 때 "모든 사용자" 접근을 골랐는지 확인해 주세요'); });
+  }
 
   /* ---------- 기록 중 자동 저장 · 새로고침 복구 ---------- */
   var lastSave = 0;
@@ -1717,10 +1829,11 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-learn', function () { $('learn').style.display = $('learn').style.display === 'none' ? '' : 'none'; });
   bind('btn-learn-go', learn);
   bind('btn-treset', function () { if (!confirm('숫자 틀을 처음 상태로 되돌릴까요?')) return; TEMPL = decodeT(DEFAULT_T); TEMPL0 = decodeT(DEFAULT_T); try { LS.removeItem('m1.T'); } catch (e) {} toast('숫자 틀을 초기화했습니다'); });
+  var waitSince = null;
   bind('btn-ready', function () {
     if (engine && engine.mode === 'run') { saveGhost(); show('main'); toast('기록을 계속합니다'); return; }   // 기록 중이면 기록을 지우지 않고 돌아감
     if (engine && engine.mode === 'done' && engine.lastSec > 30) { saveGhost(); show('main'); $('done-bar').style.display = ''; render(); return; }   // 막 끝난 기록이 있으면 저장 막대로
-    saveGhost(); newEngine(); show('main'); $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none'; recStart(); showRecBtn();
+    saveGhost(); newEngine(); waitSince = Date.now(); show('main'); $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none'; recStart(); showRecBtn();
     if (source === 'file') { video.playbackRate = speed; video.currentTime = 0; video.play(); }
   });
   bind('btn-realign', function () { if (source === 'file') video.pause(); show('align'); });
@@ -1729,8 +1842,7 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
     if (engine.events[key] !== null && engine.events[key] !== undefined && engine.now() - engine.events[key] <= 10) { engine.events[key] = null; toast(label + ' 표시를 취소했습니다'); render(); return; }
     engine.events[key] = engine.now(); toast(label + ' ' + M1Engine.fmt(engine.now()) + ' — 10초 안에 다시 누르면 취소'); render();
   }
-  bind('btn-de', function () { markToggle('de', '옐로잉'); });
-  bind('btn-my', function () { markToggle('my', '마이야르'); });
+  bind('btn-de', function () { markToggle('de', '옐로잉 엔드'); });
   bind('btn-fc', function () {
     if (!engine || engine.mode !== 'run') return;
     if (engine.events.fc !== null && engine.now() - engine.events.fc <= 10) { engine.events.fc = null; toast('1차 팝 표시를 취소했습니다'); render(); return; }
@@ -1762,13 +1874,19 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-new', function () {
     $('done-bar').style.display = 'none'; $('csv-box').style.display = 'none';
     if (source === 'file') { video.pause(); engine = null; $('file').value = ''; show('home'); toast('연습할 영상을 다시 골라 주세요'); }
-    else { newEngine(); recStart(); showRecBtn(); render(); toast('대기 중 · 다음 투입을 기다립니다'); }
+    else { newEngine(); waitSince = Date.now(); recStart(); showRecBtn(); render(); toast('대기 중 · 다음 투입을 기다립니다'); }
   });
   video.addEventListener('ended', function () { if (engine && engine.mode !== 'done') { engine.stop(); if (engine.mode === 'done') finish(); } });
   Array.prototype.forEach.call(document.querySelectorAll('.pw'), function (b) { b.addEventListener('click', function () { setPower(+b.getAttribute('data-p')); }); });
   Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (b) { b.addEventListener('click', function () { speed = +b.getAttribute('data-s'); video.playbackRate = speed; Array.prototype.forEach.call(document.querySelectorAll('.spd'), function (x) { x.className = 'spd' + (x === b ? ' on' : ''); }); }); });
   ['fcTemp', 'startPower', 'name', 'green', 'size', 'rorWin'].forEach(function (k) { var el = $('set-' + k); el.value = settings[k]; el.addEventListener('change', function () { settings[k] = k === 'rorWin' ? (el.value === 'fast' ? 'fast' : +el.value) : (el.type === 'number' ? +el.value : el.value); save('settings', settings); if (k === 'rorWin') { if (engine) engine.cfg.rorWin = settings.rorWin; refreshBg(); } }); });
   $('set-rec').checked = !!settings.rec; $('set-rec').addEventListener('change', function () { settings.rec = $('set-rec').checked; save('settings', settings); });
+  $('set-voice').checked = !!settings.voice; $('set-voice').addEventListener('change', function () { settings.voice = $('set-voice').checked; save('settings', settings); if (settings.voice) say('음성 안내를 켰습니다'); });
+  $('set-dropSec').value = settings.dropSec; $('set-dropDbt').value = settings.dropDbt;
+  ['dropSec', 'dropDbt'].forEach(function (k) { $('set-' + k).addEventListener('change', function () { settings[k] = +$('set-' + k).value; save('settings', settings); }); });
+  $('set-upUrl').value = settings.upUrl || ''; $('set-upKey').value = settings.upKey || '';
+  ['upUrl', 'upKey'].forEach(function (k) { $('set-' + k).addEventListener('change', function () { settings[k] = $('set-' + k).value.trim(); save('settings', settings); }); });
+  bind('btn-uptest', upTest); setTimeout(upFlush, 3000);
   $('set-guide').checked = !!settings.guide; $('set-guide').addEventListener('change', function () { settings.guide = $('set-guide').checked; save('settings', settings); });
   $('set-adapt').checked = !!settings.adapt; $('set-adapt').addEventListener('change', function () { settings.adapt = $('set-adapt').checked; save('settings', settings); });
   $('set-bgAlign').value = settings.bgAlign; $('set-bgAlign').addEventListener('change', function () { settings.bgAlign = $('set-bgAlign').value; save('settings', settings); });
@@ -1781,22 +1899,14 @@ if (typeof module !== 'undefined') module.exports = M1Engine;
   bind('btn-last', function () { var ta = $('csv-box-home'); ta.value = load('lastCsv', ''); ta.style.display = ''; ta.select(); });
 
   (function () {
-    fillBeanList(); setTimeout(fillLibOptions, 0);
+    fillBeanList();
     var sel = $('bg-sel'); PRESETS.forEach(function (p, i) { var o = document.createElement('option'); o.value = String(i); o.textContent = p.name; sel.appendChild(o); });
-    var f = load('bgFile', null); if (f) { var o2 = document.createElement('option'); o2.value = 'file'; o2.textContent = '불러온 파일: ' + f.name; o2.id = 'bg-file-opt'; sel.appendChild(o2); }
+    fillLibOptions();                                          // 선택값(lib:…)을 정하기 전에 목록이 있어야 풀리지 않음
+    if (settings.bg === 'file') settings.bg = '';                // 예전 '불러온 파일' 경로는 보관함으로 통합
+    if (libAll().length && !/^lib:/.test(settings.bg || '')) Array.prototype.slice.call(sel.querySelectorAll('option')).forEach(function (o) { if (/^\d+$/.test(o.value) && o.value !== settings.bg) o.remove(); });   // 보관함이 있으면 예시 배치는 숨김
     if (settings.bg === undefined) { settings.bg = '0'; settings.bgOn = true; save('settings', settings); }
     sel.value = settings.bg || ''; refreshBg();
     sel.addEventListener('change', function () { settings.bg = sel.value; if (sel.value) settings.bgOn = true; save('settings', settings); refreshBg(); renderBgBtn(); });
-    $('bg-file').addEventListener('change', function (e) {
-      var file = e.target.files[0]; if (!file) return; var rd = new FileReader();
-      rd.onload = function () {
-        var src = parseLogCsv(String(rd.result), file.name); var cnt = src.bt.filter(function (x) { return x !== null; }).length;
-        if (cnt < 60) { toast('BT 기록을 찾지 못했습니다 (로스팅 로그의 CSV인지 확인해 주세요)'); return; }
-        save('bgFile', src); var o = $('bg-file-opt'); if (!o) { o = document.createElement('option'); o.value = 'file'; o.id = 'bg-file-opt'; sel.appendChild(o); }
-        o.textContent = '불러온 파일: ' + src.name; sel.value = 'file'; settings.bg = 'file'; settings.bgOn = true; save('settings', settings); refreshBg(); renderBgBtn(); toast('배경으로 불러왔습니다: ' + src.name);
-      };
-      rd.readAsText(file);
-    });
   })();
   function renderBgBtn() { var b = $('btn-bg'); if (b) { b.textContent = '배경 ' + (BG && settings.bgOn ? '켬' : '끔'); b.className = BG && settings.bgOn ? 'spd on' : 'spd'; } }
   bind('btn-bg', function () { if (!BG) { toast('처음 화면에서 배경 곡선을 고르세요'); return; } settings.bgOn = !settings.bgOn; save('settings', settings); renderBgBtn(); render(); });
